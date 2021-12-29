@@ -68,6 +68,7 @@ uint8_t txValue = 0;
 char txString[100];
 bool BLE_message=false;
 bool BLE_stop=false;
+bool BLE_start=false;
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
@@ -464,6 +465,7 @@ void  makeFiles() {
   gotoCommandMode(); //Puts OpenLog in command mode.
 //  readDisk();
 //  checkandgotoCommandMode();
+  Serial.print(F("Making header file:"));
   createFile(headerFileName); //Creates a new file called Date_Time.txt
   Serial.print(F("created file: "));
   Serial.println(headerFileName);
@@ -515,6 +517,7 @@ void restart_logging() {
 		  if (OpenLog.read() == '<') break;
 	}
 	Serial.println("OpenLog resete and back online");
+	LED_blink(100, 5);
 	makeFiles();
 	delay(500);
 	logging = true;
@@ -557,7 +560,6 @@ class MyCallbacks: public BLECharacteristicCallbacks {
         else if (rxValue.find("STOP") != -1) {
 			BLE_stop=true;
         }
-
         Serial.println();
         Serial.println("*********");
       }
