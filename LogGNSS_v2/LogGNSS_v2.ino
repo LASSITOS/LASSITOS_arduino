@@ -31,16 +31,21 @@ SoftwareSerial OpenLog;
 
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 int statLED = 13;
+
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+int PIN_Rx = 12; // 12 = Soft RX pin,
+int PIN_Tx = 27; // 27 = Soft TX pin, //Connect RXI of OpenLog to pin 27 on Arduino 
 int resetOpenLog = 25; //This pin resets OpenLog. Connect pin 25 to pin GRN on OpenLog.
+//PINs can be changed to any pin.
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 bool logging = true;
-
 
 int NavigationFrequency = 1;
 int BufferSize = 301;
 
-char headerFileName[24]; //Max file name length is "12345678.123" (12 characters)
-char dataFileName[24]; //Max file name length is "12345678.123" (12 characters)
+char headerFileName[24]; //Max file name length is 23 characters)
+char dataFileName[24]; //Max file name length is 23 characters)
 char hFN2[12] ; 
 char dataFileName2[12];
 
@@ -147,9 +152,9 @@ void printPVTdata(UBX_NAV_PVT_data_t ubxDataStruct)
 	
 	  BLE_message=true;
 	  char filesstring[200];
-    sprintf(txString, "Time:  %02d:%02d:%02d.%04d,  Lat: %d, Long: %d, Elev: %d (mm) /n",
+    sprintf(txString, "Time:  %02d:%02d:%02d.%04d,  Lat: %d, Long: %d, Elev: %.1d (m) /n",
 			   ubxDataStruct.hour,ubxDataStruct.min,ubxDataStruct.sec,
-			   latitude * 0.0000001,longitude * 0.0000001,altitude);
+			   latitude * 0.0000001,longitude * 0.0000001,altitude/1000);
 }
 
 
@@ -175,7 +180,7 @@ void gotoCommandMode(void) {
       if (OpenLog.read() == '>') break; 
     }
   }
-
+  Serial.println("In command mode");
 }
 
 //This function pushes OpenLog into command mode if it is not there jet. 
@@ -218,13 +223,8 @@ void checkandgotoCommandMode(void) {
 //for OpenLog to come online and report '<' that it is ready to receive characters to record
 void setupOpenLog(void) {
   pinMode(resetOpenLog, OUTPUT);
-  
   Serial.println(F("Connecting to openLog"));  
-  //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-  //Connect RXI of OpenLog to pin 27 on Arduino
-  OpenLog.begin(9600, SWSERIAL_8N1, 12, 27, false, 256); // 12 = Soft RX pin (not used), 27 = Soft TX pin
-  //27 can be changed to any pin.
-  //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  OpenLog.begin(9600, SWSERIAL_8N1, PIN_Rx, PIN_Tx, false, 256); // 12 = Soft RX pin, 27 = Soft TX pin
 
   if (!OpenLog) { // If the object did not initialize, then its configuration is invalid
     Serial.println(F("Invalid SoftwareSerial pin configuration, check config")); 
@@ -484,6 +484,22 @@ void  makeFiles() {
 }
 
 
+void  Write_stop() {  
+  OpenLog.print(F("Measurements stopped on: "));
+  OpenLog.print(Year);
+  OpenLog.print("-");
+  OpenLog.print(Month);
+  OpenLog.print("-");
+  OpenLog.print(Day);
+  OpenLog.print(", ");
+  OpenLog.print(Hour);
+  OpenLog.print(":");
+  OpenLog.print(Minute);
+  OpenLog.print(":");
+  OpenLog.println(Second);
+  OpenLog.println(F("# --------------------------------------"));
+}
+
 
 // Stop data logging process
 void stop_logging() {
@@ -495,7 +511,22 @@ void stop_logging() {
 	strcat(txString,filesstring);
 	Serial.println("Turning datalogging OFF!");
 	Serial.println(filesstring);
-	LED_blink(100, 5);
+	LED_blink(25, 4);
+	
+	gotoCommandMode(); //Puts OpenLog in command mode.
+	OpenLog.print("append ");
+	OpenLog.print(headerFileName);
+	OpenLog.write(13); //This is 
+	 
+	// while (1) {
+		// if (OpenLog.available())
+		  // if (OpenLog.read() == '>') break;
+	// }
+	Serial.println("Ready to append");	
+	LED_blink(25, 4);
+	readDateTime();
+	Write_stop();
+	Serial.println("Measurement stopped successfully");	
 }
 
 // Restart data logging process
@@ -506,18 +537,18 @@ void restart_logging() {
 	strcpy(txString,"Turning ON datalogging with new files!");
 	LED_blink(100, 5);
 
-	//Reset OpenLog
-	digitalWrite(resetOpenLog, LOW);
-	delay(5);
-	digitalWrite(resetOpenLog, HIGH);
+	// //Reset OpenLog
+	// digitalWrite(resetOpenLog, LOW);
+	// delay(5);
+	// digitalWrite(resetOpenLog, HIGH);
 
-	//Wait for OpenLog to respond with '<' to indicate it is alive and recording to a file
-	while (1) {
-		if (OpenLog.available())
-		  if (OpenLog.read() == '<') break;
-	}
-	Serial.println("OpenLog resete and back online");
-	LED_blink(100, 5);
+	// //Wait for OpenLog to respond with '<' to indicate it is alive and recording to a file
+	// while (1) {
+		// if (OpenLog.available())
+		  // if (OpenLog.read() == '<') break;
+	// }
+	// Serial.println("OpenLog resete and back online");
+	// LED_blink(100, 5);
 	makeFiles();
 	delay(500);
 	logging = true;
