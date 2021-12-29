@@ -1,0 +1,5 @@
+# GNSS log file
+# Date: 2000-1-1
+# Time: 4:48:16
+# --------------------------------------
+# UBX binary data are in  file: 000101_0448.ubx 
