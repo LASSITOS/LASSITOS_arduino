@@ -13,9 +13,10 @@ import os,sys
 from pyubx2 import UBXReader
 
 
-filepath=r'G:\My Drive\scripts_codes\GNSS\data_examples'
+filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples'
 filename=r'\211224_0650.ubx'
 filename=r'\000101_1601.ubx'
+filename=r'\211229_2210.ubx'
 
 stream = open(filepath+filename, 'rb')
 
@@ -23,10 +24,13 @@ stream = open(filepath+filename, 'rb')
 #     print(s)
 elev=[]
 time=[]
-ubr = UBXReader(stream, ubxonly=True)
+ubr = UBXReader(stream, ubxonly=False)
 for (raw_data, parsed_data) in ubr: 
     # print(raw_data)
-    # print(parsed_data)
+    try:
+        print(parsed_data)
+    except UBXParseError:
+        print('corrupted data')
     elev.append(parsed_data.height)
     time.append(parsed_data.second)
     

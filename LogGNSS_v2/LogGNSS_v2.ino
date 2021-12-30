@@ -38,17 +38,19 @@ int PIN_Tx = 27; // 27 = Soft TX pin, //Connect RXI of OpenLog to pin 27 on Ardu
 int resetOpenLog = 25; //This pin resets OpenLog. Connect pin 25 to pin GRN on OpenLog.
 //PINs can be changed to any pin.
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+int baudOpenLog = 57600;
 
 bool logging = true;
-
-int NavigationFrequency = 1;
-int BufferSize = 301;
 
 char headerFileName[24]; //Max file name length is 23 characters)
 char dataFileName[24]; //Max file name length is 23 characters)
 char hFN2[12] ; 
 char dataFileName2[12];
 
+
+// Setting for u-blox 
+int NavigationFrequency = 5;
+int BufferSize = 301;
 #define packetLength 100 // NAV PVT is 92 + 8 bytes in length (including the sync chars, class, id, length and checksum bytes)
 
 long Year ;
@@ -185,38 +187,38 @@ void gotoCommandMode(void) {
 
 //This function pushes OpenLog into command mode if it is not there jet. 
 //Use with caution. It will push garbage data to Openlog that will be saved to Logfile if it is not in Command mode. 
-void checkandgotoCommandMode(void) {
-  bool resp = false;
-  int count = 0;
-  Serial.print("Going to command mode.");
-  while (!resp){
-    ++count;
-    //Send three control z to enter OpenLog command mode
-    //Works with Arduino v1.0
-    OpenLog.write(26);
-    OpenLog.write(26);
-    OpenLog.write(26);
+// void checkandgotoCommandMode(void) {
+  // bool resp = false;
+  // int count = 0;
+  // Serial.print("Going to command mode.");
+  // while (!resp){
+    // ++count;
+    // //Send three control z to enter OpenLog command mode
+    // //Works with Arduino v1.0
+    // OpenLog.write(26);
+    // OpenLog.write(26);
+    // OpenLog.write(26);
   
-    //Wait for OpenLog to respond with '>' to indicate we are in command mode
-    for (int timeOut = 0 ; timeOut < 500 ; timeOut++) {
-      if (OpenLog.available()){
-        if (OpenLog.read() == '>') {
-          resp = true;
-          Serial.println(F("OpenLog is in Command Mode"));
-          break;  
-        }
-      }
-      delay(1);
-    }
-    if (count > 2) { 
-      Serial.println(F("Can't get in command mode. Freezing."));
-      while (1){
-      }
-    } else if (!resp) {
-      Serial.println(F("Problem getting in command mode. Retry in case OpenLog was already in command mode"));
-    }
-  }
-}
+    // //Wait for OpenLog to respond with '>' to indicate we are in command mode
+    // for (int timeOut = 0 ; timeOut < 500 ; timeOut++) {
+      // if (OpenLog.available()){
+        // if (OpenLog.read() == '>') {
+          // resp = true;
+          // Serial.println(F("OpenLog is in Command Mode"));
+          // break;  
+        // }
+      // }
+      // delay(1);
+    // }
+    // if (count > 2) { 
+      // Serial.println(F("Can't get in command mode. Freezing."));
+      // while (1){
+      // }
+    // } else if (!resp) {
+      // Serial.println(F("Problem getting in command mode. Retry in case OpenLog was already in command mode"));
+    // }
+  // }
+// }
 
 
 //Setups up the software serial, resets OpenLog so we know what state it's in, and waits
@@ -224,7 +226,7 @@ void checkandgotoCommandMode(void) {
 void setupOpenLog(void) {
   pinMode(resetOpenLog, OUTPUT);
   Serial.println(F("Connecting to openLog"));  
-  OpenLog.begin(9600, SWSERIAL_8N1, PIN_Rx, PIN_Tx, false, 256); // 12 = Soft RX pin, 27 = Soft TX pin
+  OpenLog.begin(baudOpenLog, SWSERIAL_8N1, PIN_Rx, PIN_Tx, false, 256); // 12 = Soft RX pin, 27 = Soft TX pin
 
   if (!OpenLog) { // If the object did not initialize, then its configuration is invalid
     Serial.println(F("Invalid SoftwareSerial pin configuration, check config")); 
