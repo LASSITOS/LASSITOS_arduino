@@ -16,7 +16,7 @@ void setup() {
 	
 	//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   //Connect RXI of OpenLog to pin 17 and 16 on ESP32
-  OpenLog.begin(9600);
+  OpenLog.begin(115200);
   //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 	
@@ -42,11 +42,13 @@ void setup() {
 
 void loop() {
   digitalWrite(statLED, HIGH);
-  delay(500);
+  delay(5);
   dummyVoltage++;
   OpenLog.print("Voltage: ");
   OpenLog.println(dummyVoltage);
-  Serial.println("New entry in file. Go look!");
+  OpenLog.println("Papla pirla che tra po te parlat piu. Te mandi gio a l'inferno da dont ca tes vegnu.");
+  OpenLog.println( "The purpose of our thesis is to test the new GNSS module, ZED-F9P released by u-blox. In order to do this, we analyze the measurements to see which applications the module is best suited for. The measurement methods we choose to use for the analysis, are different types of real-time measurements, as well as different types of phase-based static measurements. The real-time measurements consist of dynamic and stationary (static) measurements, as well as the accuracy we can expect.");
+  Serial.print(".");
   digitalWrite(statLED, LOW);
-  delay(2000);
+  delay(20);
 }
