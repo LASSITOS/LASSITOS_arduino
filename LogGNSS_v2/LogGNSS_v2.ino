@@ -26,19 +26,29 @@
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h> 
 SFE_UBLOX_GNSS myGNSS;
 
-#include <SoftwareSerial.h> //Needed for Software Serial to OpenLog
-SoftwareSerial OpenLog;
+
+//HardwareSerial
+// #include <SoftwareSerial.h> //Needed for Software Serial to OpenLog
+// SoftwareSerial OpenLog;
+
+//HardwareSerial
+#include <HardwareSerial.h>
+HardwareSerial OpenLog(2);
+
 
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 int statLED = 13;
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-int PIN_Rx = 12; // 12 = Soft RX pin,
-int PIN_Tx = 27; // 27 = Soft TX pin, //Connect RXI of OpenLog to pin 27 on Arduino 
+// int PIN_Rx = 12; // 12 = Software RX pin,
+// int PIN_Tx = 27; // 27 = Software TX pin, //Connect RXI of OpenLog to pin 27 on Arduino 
 int resetOpenLog = 25; //This pin resets OpenLog. Connect pin 25 to pin GRN on OpenLog.
 //PINs can be changed to any pin.
+// For Hardware Serial use Pin 16 an 17
+int PIN_Rx = 16; // 12 = Hardware RX pin,
+int PIN_Tx = 17; // 27 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-int baudrateOpenLog= 38400;
+int baudrateOpenLog= 115200 ;
 
 bool logging = true;
 
@@ -49,7 +59,7 @@ char dataFileName2[12];
 
 
 // Setting for u-blox 
-int NavigationFrequency = 5;
+int NavigationFrequency = 10;
 int BufferSize = 301;
 #define packetLength 100 // NAV PVT is 92 + 8 bytes in length (including the sync chars, class, id, length and checksum bytes)
 
@@ -72,10 +82,10 @@ BLECharacteristic * pTxCharacteristic;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 uint8_t txValue = 0;
-char txString[100];
+char txString[100];   // String containing messages to be send to BLE terminal
 bool BLE_message=false;
-bool BLE_stop=false;
-bool BLE_start=false;
+bool BLE_stop=false;   // Stop datalogger over BLE
+bool BLE_start=false;  // Start datalogger over BLE
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
@@ -225,9 +235,10 @@ void gotoCommandMode(void) {
 //for OpenLog to come online and report '<' that it is ready to receive characters to record
 void setupOpenLog(void) {
   pinMode(resetOpenLog, OUTPUT);
-  Serial.println(F("Connecting to openLog"));  
-  OpenLog.begin(baudrateOpenLog, SWSERIAL_8N1, PIN_Rx, PIN_Tx, false, 256); // 12 = Soft RX pin, 27 = Soft TX pin
-
+  Serial.println(F("Connecting to openLog")); 
+//		OpenLog.begin(baudrateOpenLog, SWSERIAL_8N1, PIN_Rx, PIN_Tx, false, 256); // Use this for SoftwareSerial
+  OpenLog.begin(baudrateOpenLog,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
+  
   if (!OpenLog) { // If the object did not initialize, then its configuration is invalid
     Serial.println(F("Invalid SoftwareSerial pin configuration, check config")); 
     while (1) { // Don't continue with invalid configuration. Blink LED 3 times every 2 seconds
@@ -432,11 +443,11 @@ void  makeFiles() {
   while (1) {  // Check for GPS to have good time and date
     ++count;
     if ((myGNSS.getTimeValid() == true) && (myGNSS.getDateValid() == true)) {
-      Serial.print(F("Date and time are valid. It is: "));
-      readDateTime();
-      printDateTime();
-      Serial.println();
-      break;
+        Serial.print(F("Date and time are valid. It is: "));
+        readDateTime();
+        printDateTime();
+        Serial.println();
+        break;
     }else if (count > 5) {
         Year = 2000 ;
         Month = 01;
@@ -593,6 +604,20 @@ class MyCallbacks: public BLECharacteristicCallbacks {
         else if (rxValue.find("STOP") != -1) {
 			BLE_stop=true;
         }
+
+        else if (rxValue.find("RATE") != -1) {
+          if (!logging) {
+            Serial.println("New navigation frequency!");
+            BLE_message=true;
+            strcpy(txString,"New navigation frequency!");
+            LED_blink(100, 5);
+            myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+          } else {
+			Serial.println("Datalogging is running. Can't change the GNSS data frequency now. First stop measurment.");
+			BLE_message=true;
+            strcpy(txString,"Datalogging running. Can't change data frequency now. First stop measurment.");
+          }
+        }
         Serial.println();
         Serial.println("*********");
       }
@@ -674,7 +699,7 @@ void setup(){
       while (1){
         LED_blink(200, 2);
         delay(2000);
-        if (myGNSS.begin() == false) { //Connect to the u-blox module using Wire port
+        if (myGNSS.begin() == true) { //Connect to the u-blox module using Wire port
           Serial.println(F("u-blox GNSS detected I2C address. Reconnection was successfull."));
           break;
         }
@@ -768,10 +793,10 @@ void loop(){
 	}
 		
   
-	if (Serial.available()) // Check if the user wants to stop logging
-		{
-    Serial.print(Serial.read());
+	if (Serial.available()){ // Check if the user wants to stop logging
 		stop_logging();
+		while (Serial.available())
+			Serial.write(Serial.read());
 	}	
 
 
