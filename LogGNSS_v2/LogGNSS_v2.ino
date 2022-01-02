@@ -38,7 +38,7 @@ int PIN_Tx = 27; // 27 = Soft TX pin, //Connect RXI of OpenLog to pin 27 on Ardu
 int resetOpenLog = 25; //This pin resets OpenLog. Connect pin 25 to pin GRN on OpenLog.
 //PINs can be changed to any pin.
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-int baudOpenLog = 57600;
+int baudrateOpenLog= 38400;
 
 bool logging = true;
 
@@ -226,7 +226,7 @@ void gotoCommandMode(void) {
 void setupOpenLog(void) {
   pinMode(resetOpenLog, OUTPUT);
   Serial.println(F("Connecting to openLog"));  
-  OpenLog.begin(baudOpenLog, SWSERIAL_8N1, PIN_Rx, PIN_Tx, false, 256); // 12 = Soft RX pin, 27 = Soft TX pin
+  OpenLog.begin(baudrateOpenLog, SWSERIAL_8N1, PIN_Rx, PIN_Tx, false, 256); // 12 = Soft RX pin, 27 = Soft TX pin
 
   if (!OpenLog) { // If the object did not initialize, then its configuration is invalid
     Serial.println(F("Invalid SoftwareSerial pin configuration, check config")); 
@@ -697,10 +697,13 @@ void setup(){
     // setting up GPS for automatic messages
     Serial.println(F("setting up GPS for automatic messages"));
     myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
-    myGNSS.setNavigationFrequency(NavigationFrequency); //Produce one navigation solution per second
-    myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
+    myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+    // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
+	myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
     myGNSS.logNAVPVT(); // Enable NAV PVT data logging
-
+	myGNSS.setAutoNAVATT(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
+    myGNSS.logNAVATT(); // Enable NAV PVT data logging
+	
     Serial.println(F("Setup completeded."));
 }
 
@@ -713,11 +716,14 @@ void loop(){
 		if (millis() - lastTime > 5000)  {  // make new line every 5 seconds
 			lastTime = millis(); //Update the timer
 			Serial.println(" ");
+			BLE_message=true;
+			char filesstring[200];
+			strcpy(txString,".");
 		}
 		
 		
 		myGNSS.checkUblox(); // Check for the arrival of new data and process it.
-		myGNSS.checkCallbacks(); // Check if any callbacks are waiting to be processed.
+		// myGNSS.checkCallbacks(); // Check if any callbacks are waiting to be processed.
 
 		if (myGNSS.fileBufferAvailable() >= packetLength) // Check to see if a new packetLength-byte NAV PVT message has been stored
 			{
@@ -729,7 +735,7 @@ void loop(){
 
 			//printBuffer(myBuffer); // Uncomment this line to print the data as Hexadecimal bytes
 
-			LED_blink(10, 1);
+			LED_blink(5, 1);
 		}
 	}
   
@@ -764,6 +770,7 @@ void loop(){
   
 	if (Serial.available()) // Check if the user wants to stop logging
 		{
+    Serial.print(Serial.read());
 		stop_logging();
 	}	
 

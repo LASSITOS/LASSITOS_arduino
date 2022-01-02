@@ -1,6 +1,0 @@
-
-# GNSS log file
-# Date: 2021-12-24
-# Time: 6:12:32
-# --------------------------------------
-# UBX binary data are in  file: 211224_0612.ubx 
