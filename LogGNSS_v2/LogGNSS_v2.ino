@@ -180,6 +180,10 @@ void printPVTdata(UBX_NAV_PVT_data_t ubxDataStruct)
 
 //This function pushes OpenLog into command mode
 void gotoCommandMode(void) {
+  bool cmdMod =false;
+  int count = 0;
+  if (OpenLog.available()) OpenLog.read(); 
+  
   //Send three control z to enter OpenLog command mode
   //Works with Arduino v1.0
   OpenLog.write(26);
@@ -187,12 +191,34 @@ void gotoCommandMode(void) {
   OpenLog.write(26);
 
   //Wait for OpenLog to respond with '>' to indicate we are in command mode
-  while (1) {
-    if (OpenLog.available()){
-      if (OpenLog.read() == '>') break; 
+// / while (1) {
+  while(!cmdMod) {
+    for (int timeOut = 0 ; timeOut < 500 ; timeOut++) {
+      if (OpenLog.available()){
+        if (OpenLog.read() == '>') {
+          Serial.println("In command mode");
+          cmdMod = true;
+          break; 
+          
+        }
+      }
+      delay(1);
+    }
+    
+    if (!cmdMod) {
+      Serial.print("Can't go in command mode. Reseting SD");
+      ++count;
+      if (count>2) break;
+      digitalWrite(resetOpenLog, LOW);
+      delay(1000);
+      digitalWrite(resetOpenLog, HIGH);
+      delay(1000);
+      if (OpenLog.available()) OpenLog.read();
+      OpenLog.write(26);
+      OpenLog.write(26);
+      OpenLog.write(26);
     }
   }
-  Serial.println("In command mode");
 }
 
 //This function pushes OpenLog into command mode if it is not there jet. 
@@ -265,6 +291,7 @@ void setupOpenLog(void) {
 //Then returns to listening mode
 //This function assumes the OpenLog is in command mode
 void createFile(char *fileName) {
+  while(OpenLog.available()) OpenLog.read(); //Clear incoming buffer
   //New way
   OpenLog.print("new ");
   OpenLog.print(fileName);
@@ -277,7 +304,7 @@ void createFile(char *fileName) {
     if (OpenLog.available())
       if (OpenLog.read() == '>') break;
   }
-  Serial.print("Made new file");
+//  Serial.print("Made new file");
 
   OpenLog.print("append ");
 //  OpenLog.println(fileName); //regular println works with OpenLog v2.51 and above
@@ -478,20 +505,20 @@ void  makeFiles() {
   gotoCommandMode(); //Puts OpenLog in command mode.
 //  readDisk();
 //  checkandgotoCommandMode();
-  Serial.print(F("Making header file:"));
+  Serial.print("Making header file.");
   createFile(headerFileName); //Creates a new file called Date_Time.txt
   Serial.print(F("created file: "));
   Serial.println(headerFileName);
   Write_header();
-  
+  delay(100);
   
   gotoCommandMode();  //Puts OpenLog in command mode.
 //  readFile(headerFileName);
 
-  Serial.print(F("Making data file:"));
+  Serial.print("Making data file:");
   Serial.println(dataFileName);
   createFile(dataFileName); //Creates a new file called Date_Time.ubx
-  Serial.print(F("Created file: "));
+  Serial.print("Created file: ");
   Serial.println(dataFileName);
   LED_blink(100,10);
 }
@@ -545,9 +572,9 @@ void stop_logging() {
 // Restart data logging process
 void restart_logging() {
 	logging = false;
-	Serial.println("Turning ON datalogging with new files!");
 	BLE_message=true;
 	strcpy(txString,"Turning ON datalogging with new files!");
+	Serial.println(txString);
 	LED_blink(100, 5);
 
 	// //Reset OpenLog
@@ -566,6 +593,40 @@ void restart_logging() {
 	delay(500);
 	logging = true;
 }
+
+
+// set new GNSS NavigationRate
+void setRate( String rxValue){  
+   if (!logging) {
+	  int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+	  if (index !=-1 and index2 !=-1){
+  		Serial.println(rxValue);
+      sprintf(txString,"index1: %d, index2: %d",index,index2);
+      Serial.println(txString);
+  		Serial.println(rxValue.substring(index+1,index2));
+      Serial.println(rxValue.substring(index+1,index2).toInt());
+  		NavigationFrequency = rxValue.substring(index+1,index2).toInt();
+  		BLE_message=true;
+  		sprintf(txString,"New navigation frequency: %d",NavigationFrequency);
+  		Serial.println(txString);
+  		myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+	  } else {
+  		BLE_message=true;
+  		sprintf(txString,"New frequency can not be parsed form string '%s'. Valid format is 'RATE:2:'",txString);
+  		Serial.println(txString);
+	  }
+  } else {
+  	BLE_message=true;
+  	strcpy(txString,"Datalogging running. Can't change data frequency now. First stop measurment!");
+  	Serial.println(txString);
+  }
+}
+
+
+
+
+
 
 
 
@@ -599,26 +660,16 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 
         //Start new data files if START is received and stop current data files if STOP is received
         if (rxValue.find("START") != -1) { 
-			BLE_start=true;
-       }
-        else if (rxValue.find("STOP") != -1) {
-			BLE_stop=true;
+			     BLE_start=true;
+        } else if (rxValue.find("STOP") != -1) {
+			     BLE_stop=true;
+        } else if (rxValue.find("RATE") != -1) {
+			     char passValue[20];
+           for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+//			     strcpy(passValue,rxValue);
+			     setRate(passValue);
         }
-
-        else if (rxValue.find("RATE") != -1) {
-          if (!logging) {
-            Serial.println("New navigation frequency!");
-            BLE_message=true;
-            strcpy(txString,"New navigation frequency!");
-            LED_blink(100, 5);
-            myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
-          } else {
-			Serial.println("Datalogging is running. Can't change the GNSS data frequency now. First stop measurment.");
-			BLE_message=true;
-            strcpy(txString,"Datalogging running. Can't change data frequency now. First stop measurment.");
-          }
-        }
-        Serial.println();
         Serial.println("*********");
       }
     }
@@ -715,18 +766,23 @@ void setup(){
     setupOpenLog(); //Resets logger and waits for the '<' I'm alive character
     Serial.println(F("Connection to OpenLog succesful!"));
     //Write header file and create data file ready for writing binary data
-    makeFiles();
-    delay(1000);
-
+    if (logging) {  
+      makeFiles();
+      delay(1000);
+    } else {
+      BLE_message=true;
+      strcpy(txString,"Waiting for command 'START' over Serial of BLE for starting logging data!");
+      Serial.println(txString);
+    }
 
     // setting up GPS for automatic messages
     Serial.println(F("setting up GPS for automatic messages"));
     myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
     myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
     // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
-	myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
+	  myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
     myGNSS.logNAVPVT(); // Enable NAV PVT data logging
-	myGNSS.setAutoNAVATT(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
+	  myGNSS.setAutoNAVATT(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
     myGNSS.logNAVATT(); // Enable NAV PVT data logging
 	
     Serial.println(F("Setup completeded."));
@@ -737,21 +793,11 @@ void loop(){
   
   // if logging is avctive check for GNSS data and save them to SD card in binary file
 	if (logging){   
-      	Serial.print(".");
-		if (millis() - lastTime > 5000)  {  // make new line every 5 seconds
-			lastTime = millis(); //Update the timer
-			Serial.println(" ");
-			BLE_message=true;
-			char filesstring[200];
-			strcpy(txString,".");
-		}
-		
-		
 		myGNSS.checkUblox(); // Check for the arrival of new data and process it.
 		// myGNSS.checkCallbacks(); // Check if any callbacks are waiting to be processed.
 
 		if (myGNSS.fileBufferAvailable() >= packetLength) // Check to see if a new packetLength-byte NAV PVT message has been stored
-			{
+		{
 			uint8_t myBuffer[packetLength]; // Create our own buffer to hold the data while we write it to SD card
 
 			myGNSS.extractFileBufferData((uint8_t *)&myBuffer, packetLength); // Extract exactly packetLength bytes from the UBX file buffer and put them into myBuffer
@@ -759,8 +805,15 @@ void loop(){
 			OpenLog.write(myBuffer, packetLength); // Write exactly packetLength bytes from myBuffer to the ubxDataFile on the SD card
 
 			//printBuffer(myBuffer); // Uncomment this line to print the data as Hexadecimal bytes
-
+      Serial.print(".");
 			LED_blink(5, 1);
+		}     
+    if (millis() - lastTime > 5000)  {  // make new line every 5 seconds
+      lastTime = millis(); //Update the timer
+      Serial.println(" ");
+      BLE_message=true;
+      char filesstring[200];
+      strcpy(txString,".");
 		}
 	}
   
@@ -794,12 +847,26 @@ void loop(){
 		
   
 	if (Serial.available()){ // Check if the user wants to stop logging
-		stop_logging();
-		while (Serial.available())
-			Serial.write(Serial.read());
+		String rxValue = Serial.readString();
+		if (rxValue.length() > 0) {
+			Serial.println("*********");
+			Serial.print("Received Value: ");
+			for (int i = 0; i < rxValue.length(); i++)
+				Serial.print(rxValue[i]);
+			Serial.println();
+
+			//Start new data files if START is received and stop current data files if STOP is received
+			if (rxValue.indexOf("START") != -1) { 
+				restart_logging();
+			} else if (rxValue.indexOf("STOP") != -1) {
+				stop_logging();
+			} else if (rxValue.indexOf("RATE") != -1) {
+			  setRate(rxValue);
+			}
+			Serial.println("*********");
+      }
+		
 	}	
 
-
-
-	delay(50);
+	delay(20);
 }
