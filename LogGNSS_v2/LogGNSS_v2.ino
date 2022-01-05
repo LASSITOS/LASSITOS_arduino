@@ -50,7 +50,7 @@ int PIN_Tx = 17; // 27 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 int baudrateOpenLog= 115200 ;
 
-bool logging = true;
+bool logging = false;
 
 char headerFileName[24]; //Max file name length is 23 characters)
 char dataFileName[24]; //Max file name length is 23 characters)
@@ -59,7 +59,7 @@ char dataFileName2[12];
 
 
 // Setting for u-blox 
-int NavigationFrequency = 10;
+int NavigationFrequency = 1;
 int BufferSize = 301;
 #define packetLength 100 // NAV PVT is 92 + 8 bytes in length (including the sync chars, class, id, length and checksum bytes)
 
@@ -601,11 +601,11 @@ void setRate( String rxValue){
 	  int index = rxValue.indexOf(":");\
     int index2 = rxValue.indexOf(":",index+1);
 	  if (index !=-1 and index2 !=-1){
-  		Serial.println(rxValue);
-      sprintf(txString,"index1: %d, index2: %d",index,index2);
-      Serial.println(txString);
-  		Serial.println(rxValue.substring(index+1,index2));
-      Serial.println(rxValue.substring(index+1,index2).toInt());
+//  		Serial.println(rxValue);
+//      sprintf(txString,"index1: %d, index2: %d",index,index2);
+//      Serial.println(txString);
+//  		Serial.println(rxValue.substring(index+1,index2));
+//      Serial.println(rxValue.substring(index+1,index2).toInt());
   		NavigationFrequency = rxValue.substring(index+1,index2).toInt();
   		BLE_message=true;
   		sprintf(txString,"New navigation frequency: %d",NavigationFrequency);
@@ -669,6 +669,10 @@ class MyCallbacks: public BLECharacteristicCallbacks {
                passValue[i] = rxValue[i];}
 //			     strcpy(passValue,rxValue);
 			     setRate(passValue);
+        }else{
+          BLE_message=true;
+          strcpy(txString,"Input can not be parsed retry!");
+          Serial.println(txString);
         }
         Serial.println("*********");
       }
@@ -784,7 +788,10 @@ void setup(){
     myGNSS.logNAVPVT(); // Enable NAV PVT data logging
 	  myGNSS.setAutoNAVATT(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
     myGNSS.logNAVATT(); // Enable NAV PVT data logging
-	
+    myGNSS.setAutoESFRAW(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
+    myGNSS.logESFRAW(); // Enable NAV PVT data logging
+	  myGNSS.setAutoESFMEAS(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
+    myGNSS.logESFMEAS(); // Enable NAV PVT data loggin
     Serial.println(F("Setup completeded."));
 }
 
@@ -862,7 +869,11 @@ void loop(){
 				stop_logging();
 			} else if (rxValue.indexOf("RATE") != -1) {
 			  setRate(rxValue);
-			}
+			}else{
+        BLE_message=true;
+        strcpy(txString,"Input can not be parsed retry!");
+        Serial.println(txString);
+      }
 			Serial.println("*********");
       }
 		
