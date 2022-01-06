@@ -1,0 +1,7 @@
+# GNSS log file
+# Date: 2022-1-4
+# Time: 8:29:9
+# --------------------------------------
+# UBX binary data are in  file: 220104_0829.ubx 
+Measurements stopped on: 2022-1-4, 8:34:52
+# --------------------------------------
