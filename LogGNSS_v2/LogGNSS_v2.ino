@@ -50,8 +50,6 @@ int PIN_Tx = 17; // 27 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 int baudrateOpenLog= 115200 ;
 
-bool logging = false;
-
 char headerFileName[24]; //Max file name length is 23 characters)
 char dataFileName[24]; //Max file name length is 23 characters)
 char hFN2[12] ; 
@@ -59,8 +57,13 @@ char dataFileName2[12];
 
 
 // Setting for u-blox 
+bool logging = false;
+bool IMUcalibration=true;
+
 int NavigationFrequency = 1;
-int BufferSize = 301;
+dynModel DynamicModel = (dynModel)4;
+
+#define BufferSize 100;
 #define packetLength 100 // NAV PVT is 92 + 8 bytes in length (including the sync chars, class, id, length and checksum bytes)
 
 long Year ;
@@ -82,7 +85,8 @@ BLECharacteristic * pTxCharacteristic;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 uint8_t txValue = 0;
-char txString[100];   // String containing messages to be send to BLE terminal
+char txString[500];   // String containing messages to be send to BLE terminal
+char subString[20];
 bool BLE_message=false;
 bool BLE_stop=false;   // Stop datalogger over BLE
 bool BLE_start=false;  // Start datalogger over BLE
@@ -167,6 +171,39 @@ void printPVTdata(UBX_NAV_PVT_data_t ubxDataStruct)
     sprintf(txString, "Time:  %02d:%02d:%02d.%04d,  Lat: %d, Long: %d, Elev: %.1d (m) /n",
 			   ubxDataStruct.hour,ubxDataStruct.min,ubxDataStruct.sec,
 			   latitude * 0.0000001,longitude * 0.0000001,altitude/1000);
+}
+
+void checkIMUcalibration(){
+		BLE_message=true;
+		delay(1000);
+		// ESF data is produced at the navigation rate, so by default we'll get fresh data once per second
+		if (myGNSS.getEsfInfo()) // Poll new ESF STATUS data
+		{
+		  strcat(txString,"Fusion Mode: ");  
+		  sprintf(subString,"%d",myGNSS.packetUBXESFSTATUS->data.fusionMode);  
+		  strcat(txString,subString); 
+		  if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 0){
+			strcat(txString,"  Sensor is initializing..."); 
+			strcat(txString,"\n");
+			logging=false;
+			}
+		  else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 1){
+			strcat(txString,"  Sensor is calibrated!");  
+			strcat(txString,"\n");
+			IMUcalibration=false;
+			}
+		  else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 2){
+			strcat(txString,"  Sensor fusion is suspended!"); 
+			strcat(txString,"\n");
+			IMUcalibration=false;
+			}
+		  else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 3){
+			strcat(txString,"  Sensor fusion is disabled!"); 
+			strcat(txString,"\n");
+			IMUcalibration=false;
+			}
+		
+		}
 }
 
 
@@ -598,7 +635,7 @@ void restart_logging() {
 // set new GNSS NavigationRate
 void setRate( String rxValue){  
    if (!logging) {
-	  int index = rxValue.indexOf(":");\
+    int index = rxValue.indexOf(":");\
     int index2 = rxValue.indexOf(":",index+1);
 	  if (index !=-1 and index2 !=-1){
 //  		Serial.println(rxValue);
@@ -625,7 +662,29 @@ void setRate( String rxValue){
 
 
 
+// change Dynamic Model 
+void setDynamicModel( String rxValue){  
+   if (!logging) {
+	  int index = rxValue.indexOf(":");\
+	  int index2 = rxValue.indexOf(":",index+1);
+	  if (index !=-1 and index2 !=-1){
 
+  		DynamicModel = (dynModel)rxValue.substring(index+1,index2).toInt();
+  		BLE_message=true;
+  		sprintf(txString,"New dynamic navigation model: %d",DynamicModel);
+  		Serial.println(txString);
+  		myGNSS.setDynamicModel(DynamicModel); //Produce  navigation solution at given frequency
+	  } else {
+  		BLE_message=true;
+  		sprintf(txString,"Dynamic model can not be parsed form string '%s'. Valid format is 'DYNMODEL:4:'",txString);
+  		Serial.println(txString);
+	  }
+  } else {
+  	BLE_message=true;
+  	strcpy(txString,"Datalogging running. Can't change dynamic navigation plattform now. First stop measurment!");
+  	Serial.println(txString);
+  }
+}
 
 
 
@@ -658,7 +717,7 @@ class MyCallbacks: public BLECharacteristicCallbacks {
           Serial.print(rxValue[i]);
         Serial.println();
 
-        //Start new data files if START is received and stop current data files if STOP is received
+        //Start new data files if START is received and stop current data files if STOP is received. RATE and NAVMODE ar other options
         if (rxValue.find("START") != -1) { 
 			     BLE_start=true;
         } else if (rxValue.find("STOP") != -1) {
@@ -667,8 +726,12 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 			     char passValue[20];
            for (int i = 0; i < rxValue.length(); i++){
                passValue[i] = rxValue[i];}
-//			     strcpy(passValue,rxValue);
-			     setRate(passValue);
+		   setRate(passValue);
+        } else if (rxValue.find("DYNMODEL") != -1) {
+			     char passValue[20];
+           for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+			     setDynamicModel(passValue);
         }else{
           BLE_message=true;
           strcpy(txString,"Input can not be parsed retry!");
@@ -717,7 +780,19 @@ void setup_BLE() {
 }
 
 
+// Send txSTring to BLE and Serial
+void Send_tx_String(char *txString){
+    strcat(txString,"\n");
+    Serial.print(txString);
 
+    if (deviceConnected) {
+      pTxCharacteristic->setValue(txString);
+      pTxCharacteristic->notify();
+      BLE_message=false;
+    }
+
+    strcpy(txString,"");
+  }
 
 
 
@@ -782,17 +857,35 @@ void setup(){
     // setting up GPS for automatic messages
     Serial.println(F("setting up GPS for automatic messages"));
     myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
-    myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+    
+	myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+    myGNSS.setDynamicModel(DynamicModel);
+    
     // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
-	  myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
+	myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
     myGNSS.logNAVPVT(); // Enable NAV PVT data logging
-	  myGNSS.setAutoNAVATT(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
-    myGNSS.logNAVATT(); // Enable NAV PVT data logging
-    myGNSS.setAutoESFRAW(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
-    myGNSS.logESFRAW(); // Enable NAV PVT data logging
-	  myGNSS.setAutoESFMEAS(true, false); // Enable automatic NAV PVT messages with callback to printPVTdata
-    myGNSS.logESFMEAS(); // Enable NAV PVT data loggin
-    Serial.println(F("Setup completeded."));
+	myGNSS.setAutoNAVATT(true, false); 
+    myGNSS.logNAVATT(); 
+//    myGNSS.setAutoESFRAW(true, false); 
+//    myGNSS.logESFRAW(); 
+	// myGNSS.setAutoESFALG(true, false); 
+    // myGNSS.logESFALG(); 
+	myGNSS.setAutoESFINS(true, false); 
+    myGNSS.logESFINS(); 
+	myGNSS.setAutoESFMEAS(true, false); 
+    myGNSS.logESFMEAS(); 
+    // myGNSS.setAutoRXMSFRBX(true, false); 
+    // myGNSS.logRXMSFRBX(); 
+	// myGNSS.setAutoRXMRAWX(true, false); 
+    // myGNSS.logRXMRAWX(); 
+	
+	
+	//Check fusion mode
+	if (IMUcalibration){   
+		checkIMUcalibration();
+		Serial.print(txString);
+	}
+	Serial.println(F("Setup completeded."));
 }
 
 
@@ -823,7 +916,7 @@ void loop(){
       strcpy(txString,".");
 		}
 	}
-  
+	
     // Check BLE connection
 	if (deviceConnected && BLE_message ) {
 		pTxCharacteristic->setValue(txString);
@@ -878,6 +971,13 @@ void loop(){
       }
 		
 	}	
+    //Check fusion mode
+  if (IMUcalibration  and (millis() - lastTime > 1000)){   
+    checkIMUcalibration();
+    Send_tx_String(txString);
+    lastTime = millis(); //Update the timer
+  }
 
+  
 	delay(20);
 }
