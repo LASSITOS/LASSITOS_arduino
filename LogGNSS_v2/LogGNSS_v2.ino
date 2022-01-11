@@ -37,6 +37,7 @@ HardwareSerial OpenLog(2);
 
 
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
+long lastTime2 = 0; //Second simple local timer. 
 int statLED = 13;
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -63,8 +64,9 @@ bool IMUcalibration=true;
 int NavigationFrequency = 1;
 dynModel DynamicModel = (dynModel)4;
 
-#define BufferSize 100;
+#define BufferSize 256
 #define packetLength 100 // NAV PVT is 92 + 8 bytes in length (including the sync chars, class, id, length and checksum bytes)
+
 
 long Year ;
 long Month ;
@@ -173,19 +175,21 @@ void printPVTdata(UBX_NAV_PVT_data_t ubxDataStruct)
 			   latitude * 0.0000001,longitude * 0.0000001,altitude/1000);
 }
 
+
+
 void checkIMUcalibration(){
 		BLE_message=true;
-		delay(1000);
 		// ESF data is produced at the navigation rate, so by default we'll get fresh data once per second
+		delay(1000);
 		if (myGNSS.getEsfInfo()) // Poll new ESF STATUS data
 		{
-		  strcat(txString,"Fusion Mode: ");  
+		  strcat(txString,"\nFusion Mode: ");  
 		  sprintf(subString,"%d",myGNSS.packetUBXESFSTATUS->data.fusionMode);  
 		  strcat(txString,subString); 
 		  if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 0){
 			strcat(txString,"  Sensor is initializing..."); 
 			strcat(txString,"\n");
-			logging=false;
+//			logging=false;
 			}
 		  else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 1){
 			strcat(txString,"  Sensor is calibrated!");  
@@ -673,7 +677,8 @@ void setDynamicModel( String rxValue){
   		BLE_message=true;
   		sprintf(txString,"New dynamic navigation model: %d",DynamicModel);
   		Serial.println(txString);
-  		myGNSS.setDynamicModel(DynamicModel); //Produce  navigation solution at given frequency
+		IMUcalibration=true;			//New calibration is necessary after changing dynamic model
+  		myGNSS.setDynamicModel(DynamicModel); //Set new Dynamic Model for GNSS solution.
 	  } else {
   		BLE_message=true;
   		sprintf(txString,"Dynamic model can not be parsed form string '%s'. Valid format is 'DYNMODEL:4:'",txString);
@@ -782,15 +787,14 @@ void setup_BLE() {
 
 // Send txSTring to BLE and Serial
 void Send_tx_String(char *txString){
-    strcat(txString,"\n");
+//    strcat(txString,"\n");
     Serial.print(txString);
-
     if (deviceConnected) {
       pTxCharacteristic->setValue(txString);
       pTxCharacteristic->notify();
       BLE_message=false;
     }
-
+    Serial.print("send_tx_string was called");
     strcpy(txString,"");
   }
 
@@ -912,7 +916,6 @@ void loop(){
       lastTime = millis(); //Update the timer
       Serial.println(" ");
       BLE_message=true;
-      char filesstring[200];
       strcpy(txString,".");
 		}
 	}
@@ -972,10 +975,10 @@ void loop(){
 		
 	}	
     //Check fusion mode
-  if (IMUcalibration  and (millis() - lastTime > 1000)){   
+  if (IMUcalibration  and ((millis() - lastTime2) > 10000)){   
     checkIMUcalibration();
     Send_tx_String(txString);
-    lastTime = millis(); //Update the timer
+    lastTime2 = millis(); //Update the timer
   }
 
   
