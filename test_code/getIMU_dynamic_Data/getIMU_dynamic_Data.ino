@@ -60,6 +60,22 @@ void setup()
 
 void loop()
 {
+
+  // ESF data is produced at the navigation rate, so by default we'll get fresh data once per second
+  if (myGNSS.getEsfInfo()) // Poll new ESF STATUS data
+  {
+    Serial.print(F("Fusion Mode: "));  
+    Serial.print(myGNSS.packetUBXESFSTATUS->data.fusionMode);  
+    if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 0)
+      Serial.println(F("  Sensor is initializing..."));  
+    else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 1)
+      Serial.println(F("  Sensor is calibrated!"));  
+    else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 2)
+      Serial.println(F("  Sensor fusion is suspended!"));  
+    else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 3)
+      Serial.println(F("  Sensor fusion is disabled!"));  
+  }
+
   // ESF data is produced at the navigation rate, so by default we'll get fresh data once per second
   if (myGNSS.getEsfIns()) // Poll new ESF INS data
   {
