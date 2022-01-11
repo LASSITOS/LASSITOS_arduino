@@ -21,6 +21,7 @@ filename=r'\211230_0055.ubx'
 filename=r'\220104_0628.ubx'
 filename=r'\220104_0804.ubx'
 filename=r'\220104_0829.ubx'
+filename=r'\000101_0737.ubx'
 
 stream = open(filepath+filename, 'rb')
 
@@ -48,7 +49,7 @@ for (raw_data, parsed_data) in ubr:
     i+=1
     # print(parsed_data)
     try:
-        # print(parsed_data)
+        print(parsed_data)
         if parsed_data.identity=='NAV-ATT':
             ATT.append(parsed_data)
             pitch.append(parsed_data.pitch)
