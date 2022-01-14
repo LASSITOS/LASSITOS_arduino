@@ -180,7 +180,7 @@ void printPVTdata(UBX_NAV_PVT_data_t ubxDataStruct)
 void checkIMUcalibration(){
 		BLE_message=true;
 		// ESF data is produced at the navigation rate, so by default we'll get fresh data once per second
-		delay(1000);
+//		delay(1000);
 		if (myGNSS.getEsfInfo()) // Poll new ESF STATUS data
 		{
 		  strcat(txString,"\nFusion Mode: ");  
@@ -794,7 +794,7 @@ void Send_tx_String(char *txString){
       pTxCharacteristic->notify();
       BLE_message=false;
     }
-    Serial.print("send_tx_string was called");
+//    Serial.print("send_tx_string was called");
     strcpy(txString,"");
   }
 
@@ -861,23 +861,24 @@ void setup(){
     // setting up GPS for automatic messages
     Serial.println(F("setting up GPS for automatic messages"));
     myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
-    
-	myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+
     myGNSS.setDynamicModel(DynamicModel);
+	  myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+    
     
     // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
-	myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
+	  myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
     myGNSS.logNAVPVT(); // Enable NAV PVT data logging
-	myGNSS.setAutoNAVATT(true, false); 
+	  myGNSS.setAutoNAVATT(true, false); 
     myGNSS.logNAVATT(); 
 //    myGNSS.setAutoESFRAW(true, false); 
 //    myGNSS.logESFRAW(); 
 	// myGNSS.setAutoESFALG(true, false); 
     // myGNSS.logESFALG(); 
-	myGNSS.setAutoESFINS(true, false); 
+	  myGNSS.setAutoESFINS(true, false); 
     myGNSS.logESFINS(); 
-	myGNSS.setAutoESFMEAS(true, false); 
-    myGNSS.logESFMEAS(); 
+//	myGNSS.setAutoESFMEAS(true, false); 
+//    myGNSS.logESFMEAS(); 
     // myGNSS.setAutoRXMSFRBX(true, false); 
     // myGNSS.logRXMSFRBX(); 
 	// myGNSS.setAutoRXMRAWX(true, false); 

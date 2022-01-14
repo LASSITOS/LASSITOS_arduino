@@ -54,14 +54,17 @@ char hFN2[12] ;
 char dataFileName2[12];
 
 
-
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 // Setting for u-blox 
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 bool logging = false;
+
 bool IMUcalibration=true;
 int NavigationFrequency = 1;
 dynModel DynamicModel = (dynModel)4;
-bool log_RMX = true;
+bool log_RMX = false;
+bool log_ESFRAW  = false;
+bool log_ESFMEAS = false;
+bool log_ESFALG = false;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 
@@ -983,31 +986,36 @@ void setup(){
     Serial.println(F("setting up GPS for automatic messages"));
     myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
     
+	  myGNSS.setDynamicModel(DynamicModel);
     myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
-    myGNSS.setDynamicModel(DynamicModel);
+    
     
     // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
     myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
     myGNSS.logNAVPVT(); // Enable NAV PVT data logging
     myGNSS.setAutoNAVATT(true, false); 
     myGNSS.logNAVATT(); 
-//    myGNSS.setAutoESFRAW(true, false); 
-//    myGNSS.logESFRAW(); 
-  // myGNSS.setAutoESFALG(true, false); 
-    // myGNSS.logESFALG(); 
     myGNSS.setAutoESFINS(true, false); 
-    myGNSS.logESFINS(); 
-//    myGNSS.setAutoESFMEAS(true, false); 
-//    myGNSS.logESFMEAS(); 
-    
-  if (log_RMX ) {
-    myGNSS.disableUBX7Fcheck(); // RAWX data can legitimately contain 0x7F, so we need to disable the "7F" check in checkUbloxI2C
-    
-    myGNSS.setAutoRXMSFRBX(true, false); // Enable automatic RXM SFRBX messages: without callback; without implicit update
-    myGNSS.logRXMSFRBX(); // Enable RXM SFRBX data logging
-    myGNSS.setAutoRXMRAWX(true, false); // Enable automatic RXM RAWX messages: without callback; without implicit update
-    myGNSS.logRXMRAWX(); // Enable RXM RAWX data logging
-  }
+    myGNSS.logESFINS();
+    if (log_ESFRAW ) {     
+      myGNSS.setAutoESFRAW(true, false);    
+      myGNSS.logESFRAW(); 
+    }
+    if (log_ESFMEAS) {
+      myGNSS.setAutoESFMEAS(true, false); 
+      myGNSS.logESFMEAS();
+    }
+    if (log_ESFALG ) {
+     myGNSS.setAutoESFALG(true, false); 
+     myGNSS.logESFALG(); 
+    }  
+    if (log_RMX ) {
+      myGNSS.disableUBX7Fcheck(); // RAWX data can legitimately contain 0x7F, so we need to disable the "7F" check in checkUbloxI2C
+      myGNSS.setAutoRXMSFRBX(true, false); // Enable automatic RXM SFRBX messages: without callback; without implicit update
+      myGNSS.logRXMSFRBX(); // Enable RXM SFRBX data logging
+      myGNSS.setAutoRXMRAWX(true, false); // Enable automatic RXM RAWX messages: without callback; without implicit update
+      myGNSS.logRXMRAWX(); // Enable RXM RAWX data logging
+    }
   
   //Check fusion mode
   if (IMUcalibration){   
@@ -1147,6 +1155,5 @@ void loop(){
     lastTime2 = millis(); //Update the timer
   }
 
-  
   delay(5);
 }

@@ -13,7 +13,63 @@ import matplotlib.pyplot as pl
 import os,sys
 from pyubx2 import UBXReader
 
-# %%
+
+
+sys.path.append(r'C:\Users\Laktop\GNSS_arduino')
+
+from UBXdata import *
+
+
+filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples'
+
+
+
+# %% analazie data logGNSS_v3, RXM data
+
+
+
+A=UBXdata(filepath+r'\220111_2053.ubx')
+B=UBXdata(filepath+r'\220111_2049.ubx')
+C=UBXdata(filepath+r'\220111_2047.ubx')
+D=UBXdata(filepath+r'\220111_2037.ubx')
+E=UBXdata(filepath+r'\220111_2035.ubx')
+F=UBXdata(filepath+r'\220111_1857.ubx')
+G=UBXdata(filepath+r'\220111_1858.ubx')
+
+
+check_data(A)
+check_data(B)
+
+check_data(C)
+check_data(D)
+
+check_data(F)
+
+
+
+
+# %% check data logGNSS_v1, RXM data
+
+rate1=UBXdata(filepath+r'\220111_2225.ubx',name='rate:1 Hz')
+rate5=UBXdata(filepath+r'\220111_2227.ubx',name='rate:5 Hz')
+rate10=UBXdata(filepath+r'\220111_2228.ubx',name='rate:10 Hz')
+rate15=UBXdata(filepath+r'\220112_0046.ubx',name='rate:15 Hz')
+rate20=UBXdata(filepath+r'\220112_0047.ubx',name='rate:20 Hz')
+rate25=UBXdata(filepath+r'\220112_0049.ubx',name='rate:25 Hz')
+rate30=UBXdata(filepath+r'\220112_0050.ubx',name='rate:30 Hz')
+
+check_data(rate1)
+check_data(rate5)
+check_data(rate10)
+
+
+
+
+
+
+
+
+# %% old code
 filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples'
 filename=r'\211224_0650.ubx'
 filename=r'\000101_1601.ubx'
