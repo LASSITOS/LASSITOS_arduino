@@ -1,4 +1,6 @@
 
-data_examples/
+data_examples/*
+!data_examples/test_IMU/
+
 __pycache__/
 
