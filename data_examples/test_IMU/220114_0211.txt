@@ -1,0 +1,9 @@
+# GNSS log file
+# Date: 2022-1-14
+# Time: 2:11:16
+# --------------------------------------
+# UBX binary data are in  file: 220114_0211.ubx 
+Measurements stopped on: 2022-1-14, 2:13:47
+# --------------------------------------
+The total number of bytes written to SD card is: 615536
+The maximum number of bytes which the file buffer has contained is: 8180
