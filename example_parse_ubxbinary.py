@@ -48,7 +48,7 @@ check_data(F)
 
 
 
-# %% check data logGNSS_v1, RXM data
+# %% check data logGNSS_v2, data rates
 
 rate1=UBXdata(filepath+r'\220111_2225.ubx',name='rate:1 Hz')
 rate5=UBXdata(filepath+r'\220111_2227.ubx',name='rate:5 Hz')
@@ -63,7 +63,15 @@ check_data(rate5)
 check_data(rate10)
 
 
+# %% check data logGNSS_v3, data rates, no RMX
 
+rate1=UBXdata(filepath+r'\220113_2319.ubx',name='rate:1 Hz')
+rate10=UBXdata(filepath+r'\220113_2320.ubx',name='rate:10 Hz')
+rate20=UBXdata(filepath+r'\220113_2321.ubx',name='rate:20 Hz')
+
+check_data(rate1)
+check_data(rate20)
+check_data(rate10)
 
 
 
