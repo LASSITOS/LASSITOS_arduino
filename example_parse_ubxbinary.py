@@ -73,9 +73,9 @@ check_data(rate1)
 check_data(rate20)
 check_data(rate10)
 
+# %% check data logGNSS_v3, PVAT
 
-
-
+PVAT=UBXdata(filepath+r'\000101_1144.ubx')
 
 # %% old code
 filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples'
@@ -85,7 +85,7 @@ filename=r'\211230_0055.ubx'
 filename=r'\220104_0628.ubx'
 filename=r'\220104_0804.ubx'
 filename=r'\220104_0829.ubx'
-filename=r'\000101_0737.ubx'
+filename=r'\000101_0802.ubx'
 
 stream = open(filepath+filename, 'rb')
 

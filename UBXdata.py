@@ -35,9 +35,13 @@ class MSG_type:
                 for attr in p.__dict__.keys():
                     
                     if attr!='_':
-                        getattr(self,attr)[i]=getattr(p, attr)
-                    
-    
+                        try:
+                            getattr(self,attr)[i]=getattr(p, attr)
+                        
+                        except Exception as e: 
+                            print(e)
+                            print('Failed to parse')
+                            print(attr)
                 
 
 class UBXdata:
