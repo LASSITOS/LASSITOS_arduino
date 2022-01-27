@@ -80,7 +80,13 @@ PVAT=UBXdata(filepath+r'\000101_1144.ubx')
 
 # %% check data logGNSS_v3, write settings
 
-data=UBXdata(filepath+r'\220121_1953.ubx')
+data=UBXdata(filepath+r'\220127_2105.ubx')
+check_data(data)
+
+
+
+
+
 
 # %% old code
 filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples'

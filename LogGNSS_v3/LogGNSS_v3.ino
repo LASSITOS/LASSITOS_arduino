@@ -35,6 +35,7 @@ SFE_UBLOX_GNSS myGNSS;
 #include <HardwareSerial.h>
 HardwareSerial OpenLog(2);
 
+#define version "v3.0"
 
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 long lastTime2 = 0; //Second simple local timer. 
@@ -59,12 +60,17 @@ char dataFileName2[12];
 bool logging = false;
 
 bool IMUcalibration=true;
-int NavigationFrequency = 1;
+int NavigationFrequency = 10;
 dynModel DynamicModel = (dynModel)4;
 bool log_RMX = false;
 bool log_ESFRAW  = false;
 bool log_ESFMEAS = false;
 bool log_ESFALG = false;
+bool log_NAVPVAT = false;
+bool log_NAVPVT = true;
+bool log_NAVATT = true;
+bool log_ESFINS = true;
+
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 
@@ -183,8 +189,6 @@ void printPVTdata(UBX_NAV_PVT_data_t ubxDataStruct)
          ubxDataStruct.hour,ubxDataStruct.min,ubxDataStruct.sec,
          latitude * 0.0000001,longitude * 0.0000001,altitude/1000);
 }
-
-
 
 
 void checkIMUcalibration(){
@@ -311,6 +315,7 @@ void gotoCommandMode(void) {
 //for OpenLog to come online and report '<' that it is ready to receive characters to record
 void setupOpenLog(void) {
   pinMode(resetOpenLog, OUTPUT);
+  
   Serial.println(F("Connecting to openLog")); 
 //    OpenLog.begin(baudrateOpenLog, SWSERIAL_8N1, PIN_Rx, PIN_Tx, false, 256); // Use this for SoftwareSerial
   OpenLog.begin(baudrateOpenLog,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
@@ -319,7 +324,12 @@ void setupOpenLog(void) {
     Serial.println(F("Invalid SoftwareSerial pin configuration, check config")); 
     while (1) { // Don't continue with invalid configuration. Blink LED 3 times every 2 seconds
       LED_blink(200, 3);
-      delay(2000);
+      delay(1000);
+        //Reset OpenLog
+      digitalWrite(resetOpenLog, LOW);
+      delay(5);
+      digitalWrite(resetOpenLog, HIGH);
+      delay(1000);
     }
   }
 
@@ -513,6 +523,8 @@ char nth_letter(int n)
 
 void  log_settings() {  
   OpenLog.println(F("# --------------------------------------"));
+  OpenLog.print(F("Script version: "));
+  OpenLog.println(version);
   OpenLog.println(F("Measurements settings: "));
   OpenLog.print(F("IMU calibration: "));
   OpenLog.println(IMUcalibration);
@@ -520,14 +532,22 @@ void  log_settings() {
   OpenLog.println(NavigationFrequency);
   OpenLog.print(F("DynamicModel: "));
   OpenLog.println(DynamicModel);
-  OpenLog.print(F("log_RMX : "));
-  OpenLog.println(log_RMX );
+  OpenLog.print(F("log_NAVATT: "));
+  OpenLog.println(log_ESFALG);
+  OpenLog.print(F("log_NAVPVT: "));
+  OpenLog.println(log_ESFALG);
+  OpenLog.print(F("log_NAVPVAT: "));
+  OpenLog.println(log_ESFALG);
+  OpenLog.print(F("log_ESFINS: "));
+  OpenLog.println(log_ESFALG);
   OpenLog.print(F("log_ESFRAW: "));
   OpenLog.println(log_ESFRAW);
   OpenLog.print(F("log_ESFMEAS: "));
   OpenLog.println(log_ESFMEAS);
   OpenLog.print(F("log_ESFALG: "));
   OpenLog.println(log_ESFALG);
+  OpenLog.print(F("log_RMX : "));
+  OpenLog.println(log_RMX );
   OpenLog.println(F("# --------------------------------------"));
 }
 
@@ -615,6 +635,56 @@ void  Write_stop() {
 
 
 
+// setting up GPS 
+void setupGNSS(){
+  
+    Serial.println(F("setting up GPS for automatic messages"));
+    myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
+      
+    myGNSS.setDynamicModel(DynamicModel);
+    myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+      
+    if (log_NAVPVT) {
+      // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
+      myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
+      myGNSS.logNAVPVT(); // Enable NAV PVT data logging
+      }
+    if (log_NAVPVAT) {
+      // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
+      myGNSS.setAutoNAVPVAT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
+      myGNSS.logNAVPVAT(); // Enable NAV PVT data logging
+    }
+    if (log_NAVATT) {
+      myGNSS.setAutoNAVATT(true, false); 
+      myGNSS.logNAVATT(); 
+    }
+    if (log_ESFINS ) {
+       myGNSS.setAutoESFINS(true, false); 
+       myGNSS.logESFINS();
+    }
+    if (log_ESFRAW ) {     
+      myGNSS.setAutoESFRAW(true, false);    
+      myGNSS.logESFRAW(); 
+    }
+    if (log_ESFMEAS) {
+      myGNSS.setAutoESFMEAS(true, false); 
+      myGNSS.logESFMEAS();
+    }
+    if (log_ESFALG ) {
+      myGNSS.setAutoESFALG(true, false); 
+      myGNSS.logESFALG(); 
+    }  
+    if (log_RMX ) {
+      myGNSS.disableUBX7Fcheck(); // RAWX data can legitimately contain 0x7F, so we need to disable the "7F" check in checkUbloxI2C
+      myGNSS.setAutoRXMSFRBX(true, false); // Enable automatic RXM SFRBX messages: without callback; without implicit update
+      myGNSS.logRXMSFRBX(); // Enable RXM SFRBX data logging
+      myGNSS.setAutoRXMRAWX(true, false); // Enable automatic RXM RAWX messages: without callback; without implicit update
+      myGNSS.logRXMRAWX(); // Enable RXM RAWX data logging
+    }
+    
+    Serial.println(F("GPS setting updated"));
+    strcat(txString,"GPS setting updated");
+}
 
 
 
@@ -650,7 +720,7 @@ void stop_logging() {
       bytesWritten += bytesToWrite; // Update bytesWritten
       remainingBytes -= bytesToWrite; // Decrement remainingBytes
     }
-  digitalWrite(LED_BUILTIN, LOW); // Turn LED_BUILTIN off
+    digitalWrite(LED_BUILTIN, LOW); // Turn LED_BUILTIN off
 
     Serial.print(F("The total number of bytes written to SD card is: ")); // Print how many bytes have been written to SD card
     Serial.println(bytesWritten);
@@ -716,12 +786,9 @@ void restart_logging() {
   makeFiles();
   delay(500);
   logging = true;
+  setupGNSS();
   myGNSS.clearFileBuffer();
   
-  if (log_RMX ) {
-    myGNSS.setAutoRXMSFRBX(true, false); // Enable automatic RXM SFRBX messages: without callback; without implicit update
-    myGNSS.setAutoRXMRAWX(true, false); // Enable automatic RXM RAWX messages: without callback; without implicit update
-  }
 }
 
 
@@ -740,7 +807,7 @@ void setRate( String rxValue){
       BLE_message=true;
       sprintf(txString,"New navigation frequency: %d",NavigationFrequency);
       Serial.println(txString);
-      myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+//      myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
     } else {
       BLE_message=true;
       sprintf(txString,"New frequency can not be parsed form string '%s'. Valid format is 'RATE:2:'",txString);
@@ -766,8 +833,8 @@ void setDynamicModel( String rxValue){
       BLE_message=true;
       sprintf(txString,"New dynamic navigation model: %d",DynamicModel);
       Serial.println(txString);
-    IMUcalibration=true;      //New calibration is necessary after changing dynamic model
-      myGNSS.setDynamicModel(DynamicModel); //Set new Dynamic Model for GNSS solution.
+      IMUcalibration=true;      //New calibration is necessary after changing dynamic model
+//      myGNSS.setDynamicModel(DynamicModel); //Set new Dynamic Model for GNSS solution.
     } else {
       BLE_message=true;
       sprintf(txString,"Dynamic model can not be parsed form string '%s'. Valid format is 'DYNMODEL:4:'",txString);
@@ -805,6 +872,30 @@ void setLogRMX( String rxValue){
 }
 
 
+// change bool setting
+void setLogFlag( String rxValue, bool &flag, String flagname){  
+   if (!logging) {
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+      flag = (rxValue.substring(index+1,index2).toInt() > 0);
+      BLE_message=true;
+      sprintf(txString,"New %s log setting is: %d",flagname,flag );
+      Serial.println(txString);
+      
+    } else {
+      BLE_message=true;
+      sprintf(txString,"%s log setting can not be parsed from string '%s'. Valid format is 'FLAGNAME:0:'",flagname,txString);
+      Serial.println(txString);
+    }
+  } else {
+    BLE_message=true;
+    strcpy(txString,"Datalogging running. Can't change flag log setting now. First stop measurment!");
+    Serial.println(txString);
+  }
+}
+
+
 // change setting for regular check for IMU calibration
 void  setIMUcal( String rxValue){  
    if (!logging) {
@@ -813,7 +904,7 @@ void  setIMUcal( String rxValue){
     if (index !=-1 and index2 !=-1){
       IMUcalibration = (rxValue.substring(index+1,index2).toInt() > 0);
       BLE_message=true;
-      sprintf(txString,"New IMUcalibration setting is: %d",log_RMX );
+      sprintf(txString,"New IMUcalibration setting is: %d",IMUcalibration );
       Serial.println(txString);
       
     } else {
@@ -827,6 +918,11 @@ void  setIMUcal( String rxValue){
     Serial.println(txString);
   }
 }
+
+
+
+
+
 
 // /////////////////////////////////////////////
 // ---------------------------------------------
@@ -880,6 +976,41 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 		   for (int i = 0; i < rxValue.length(); i++){
                passValue[i] = rxValue[i];}
            setIMUcal(passValue);
+		} else if (rxValue.find("NAVPVT") != -1) {
+           char passValue[40];
+		   for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+           setLogFlag( passValue, log_NAVPVT, "NAVPVT");
+		} else if (rxValue.find("NAVATT") != -1) {
+           char passValue[40];
+		   for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+           setLogFlag( passValue, log_NAVATT, "NAVATT");
+		} else if (rxValue.find("NAVPVAT") != -1) {
+           char passValue[40];
+		   for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+           setLogFlag( passValue, log_NAVPVAT, "NAVPVAT");
+		} else if (rxValue.find("ESFINS") != -1) {
+           char passValue[40];
+		   for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+           setLogFlag( passValue, log_ESFINS, "ESFINS");
+		} else if (rxValue.find("ESFRAW") != -1) {
+           char passValue[40];
+		   for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+           setLogFlag( passValue, log_ESFRAW, "ESFRAW");
+		} else if (rxValue.find("ESFMEAS") != -1) {
+           char passValue[40];
+		   for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+           setLogFlag( passValue, log_ESFMEAS, "ESFMEAS");
+		} else if (rxValue.find("ESFALG") != -1) {
+           char passValue[40];
+		   for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+           setLogFlag( passValue, log_ESFALG, "ESFALG");
 		}else{
           BLE_message=true;
           strcpy(txString,"Input can not be parsed retry!");
@@ -889,6 +1020,7 @@ class MyCallbacks: public BLECharacteristicCallbacks {
       }
     }
 };
+
 
 
 void setup_BLE() {
@@ -989,7 +1121,7 @@ void setup(){
     myGNSS.setI2COutput(COM_TYPE_UBX); //Set the I2C port to output UBX only (turn off NMEA noise)
 	
   //myGNSS.enableDebugging(); // Uncomment this line to enable lots of helpful GNSS debug messages on Serial
-//	myGNSS.enableDebugging(Serial, true); // Or, uncomment this line to enable only the important GNSS debug messages on Serial
+  //myGNSS.enableDebugging(Serial, true); // Or, uncomment this line to enable only the important GNSS debug messages on Serial
 	
     Serial.println(F("Connection to GPS succesful"));
 
@@ -1009,54 +1141,22 @@ void setup(){
     }
 
     // setting up GPS for automatic messages
-    Serial.println(F("setting up GPS for automatic messages"));
-    myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
-    
-	  myGNSS.setDynamicModel(DynamicModel);
-    myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
-    
-    // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
-    myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
-    myGNSS.logNAVPVT(); // Enable NAV PVT data logging
-    myGNSS.setAutoNAVATT(true, false); 
-    myGNSS.logNAVATT(); 
-    myGNSS.setAutoESFINS(true, false); 
-    myGNSS.logESFINS();
-    if (log_ESFRAW ) {     
-      myGNSS.setAutoESFRAW(true, false);    
-      myGNSS.logESFRAW(); 
-    }
-    if (log_ESFMEAS) {
-      myGNSS.setAutoESFMEAS(true, false); 
-      myGNSS.logESFMEAS();
-    }
-    if (log_ESFALG ) {
-     myGNSS.setAutoESFALG(true, false); 
-     myGNSS.logESFALG(); 
-    }  
-    if (log_RMX ) {
-      myGNSS.disableUBX7Fcheck(); // RAWX data can legitimately contain 0x7F, so we need to disable the "7F" check in checkUbloxI2C
-      myGNSS.setAutoRXMSFRBX(true, false); // Enable automatic RXM SFRBX messages: without callback; without implicit update
-      myGNSS.logRXMSFRBX(); // Enable RXM SFRBX data logging
-      myGNSS.setAutoRXMRAWX(true, false); // Enable automatic RXM RAWX messages: without callback; without implicit update
-      myGNSS.logRXMRAWX(); // Enable RXM RAWX data logging
-    }
+  	setupGNSS();
+  	delay(200);
+
+   //Check fusion mode
+   if (IMUcalibration){   
+		checkIMUcalibration();
+		Serial.print(txString);
+   }
   
-  //Check fusion mode
-  if (IMUcalibration){   
-    checkIMUcalibration();
-    Serial.print(txString);
-  }
-  
-  Serial.println(F("Setup completeded."));
-  lastPrint = millis(); // Initialize lastPrint
+   Serial.println(F("Setup completeded."));
+   lastPrint = millis(); // Initialize lastPrint
 }
 
 
 void loop(){
-  
-  //################################# Data logging #############################################
-  
+  //################################# Data logging ############################################# 
   if (logging){    // if logging is avctive check for GNSS data and save them to SD card in binary file
     myGNSS.checkUblox(); // Check for the arrival of new data and process it.
     // myGNSS.checkCallbacks(); // Check if any callbacks are waiting to be processed.
@@ -1110,9 +1210,7 @@ void loop(){
 
   }
   
-  
-  
-  
+
   
   
   //################################# Do other stuff #############################################
