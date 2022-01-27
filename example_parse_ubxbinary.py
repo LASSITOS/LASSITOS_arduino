@@ -73,9 +73,14 @@ check_data(rate1)
 check_data(rate20)
 check_data(rate10)
 
-# %% check data logGNSS_v3, PVAT
+# %% check data logGNSS_v2, PVAT
 
 PVAT=UBXdata(filepath+r'\000101_1144.ubx')
+
+
+# %% check data logGNSS_v3, write settings
+
+data=UBXdata(filepath+r'\220121_1953.ubx')
 
 # %% old code
 filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples'

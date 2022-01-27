@@ -511,6 +511,27 @@ char nth_letter(int n)
 }
 
 
+void  log_settings() {  
+  OpenLog.println(F("# --------------------------------------"));
+  OpenLog.println(F("Measurements settings: "));
+  OpenLog.print(F("IMU calibration: "));
+  OpenLog.println(IMUcalibration);
+  OpenLog.print(F("NavigationFrequency: "));
+  OpenLog.println(NavigationFrequency);
+  OpenLog.print(F("DynamicModel: "));
+  OpenLog.println(DynamicModel);
+  OpenLog.print(F("log_RMX : "));
+  OpenLog.println(log_RMX );
+  OpenLog.print(F("log_ESFRAW: "));
+  OpenLog.println(log_ESFRAW);
+  OpenLog.print(F("log_ESFMEAS: "));
+  OpenLog.println(log_ESFMEAS);
+  OpenLog.print(F("log_ESFALG: "));
+  OpenLog.println(log_ESFALG);
+  OpenLog.println(F("# --------------------------------------"));
+}
+
+
 // Make new files in SD card. file names are derived from GNSS time if available. 
 void  makeFiles() {  
   Serial.println(F("Making new files"));
@@ -561,6 +582,8 @@ void  makeFiles() {
   Serial.println(headerFileName);
   Write_header();
   delay(100);
+  log_settings();
+  delay(100);
   
   gotoCommandMode();  //Puts OpenLog in command mode.
 //  readFile(headerFileName);
@@ -589,6 +612,8 @@ void  Write_stop() {
   OpenLog.println(Second);
   OpenLog.println(F("# --------------------------------------"));
 }
+
+
 
 
 
@@ -691,6 +716,7 @@ void restart_logging() {
   makeFiles();
   delay(500);
   logging = true;
+  myGNSS.clearFileBuffer();
   
   if (log_RMX ) {
     myGNSS.setAutoRXMSFRBX(true, false); // Enable automatic RXM SFRBX messages: without callback; without implicit update
@@ -989,7 +1015,6 @@ void setup(){
 	  myGNSS.setDynamicModel(DynamicModel);
     myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
     
-    
     // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
     myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
     myGNSS.logNAVPVT(); // Enable NAV PVT data logging
@@ -1062,18 +1087,18 @@ void loop(){
 
     if (millis() > (lastPrint + 1000)) // Print bytesWritten once per second
     {
-      Serial.print(F("The number of bytes written to SD card is: ")); // Print how many bytes have been written to SD card
-      Serial.println(bytesWritten);
-
-      uint16_t maxBufferBytes = myGNSS.getMaxFileBufferAvail(); // Get how full the file buffer has been (not how full it is now)
-
-      //Serial.print(F("The maximum number of bytes which the file buffer has contained is: ")); // It is a fun thing to watch how full the buffer gets
-      //Serial.println(maxBufferBytes);
-
-      if (maxBufferBytes > ((fileBufferSize / 5) * 4)) // Warn the user if fileBufferSize was more than 80% full
-      {
-         Serial.println(F("Warning: the file buffer has been over 80% full. Some data may have been lost."));
-      }
+//      Serial.print(F("The number of bytes written to SD card is: ")); // Print how many bytes have been written to SD card
+//      Serial.println(bytesWritten);
+//
+//      uint16_t maxBufferBytes = myGNSS.getMaxFileBufferAvail(); // Get how full the file buffer has been (not how full it is now)
+//
+//      //Serial.print(F("The maximum number of bytes which the file buffer has contained is: ")); // It is a fun thing to watch how full the buffer gets
+//      //Serial.println(maxBufferBytes);
+//
+//      if (maxBufferBytes > ((fileBufferSize / 5) * 4)) // Warn the user if fileBufferSize was more than 80% full
+//      {
+//         Serial.println(F("Warning: the file buffer has been over 80% full. Some data may have been lost."));
+//      }
 
       Serial.println(" ");
       BLE_message=true;
