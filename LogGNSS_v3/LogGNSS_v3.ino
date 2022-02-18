@@ -39,6 +39,7 @@ HardwareSerial OpenLog(2);
 
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 long lastTime2 = 0; //Second simple local timer. 
+long lastTime_logstatus = 0; //Second simple local timer. 
 int statLED = 13;
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -59,7 +60,7 @@ char dataFileName2[12];
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 bool logging = false;
 
-bool IMUcalibration=true;
+bool IMUcalibration=false;
 int NavigationFrequency = 10;
 dynModel DynamicModel = (dynModel)4;
 bool log_RMX = false;
@@ -70,7 +71,7 @@ bool log_NAVPVAT = false;
 bool log_NAVPVT = true;
 bool log_NAVATT = true;
 bool log_ESFINS = true;
-
+bool log_STATUS = true;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 
@@ -636,8 +637,7 @@ void  Write_stop() {
 
 
 // setting up GPS 
-void setupGNSS(){
-  
+void setupGNSS(){ 
     Serial.println(F("setting up GPS for automatic messages"));
     myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
       
@@ -682,6 +682,11 @@ void setupGNSS(){
       myGNSS.logRXMRAWX(); // Enable RXM RAWX data logging
     }
     
+	if (log_STATUS) {
+      myGNSS.logESFSTATUS();
+	  myGNSS.logESFALG();
+    }
+	
     Serial.println(F("GPS setting updated"));
     strcat(txString,"GPS setting updated");
 }
@@ -690,19 +695,39 @@ void setupGNSS(){
 
 // Stop data logging process
 void stop_logging() {
-  logging = false; // Set flag to false
-  BLE_message=true;
-  strcpy(txString,"Turning datalogging OFF!");
-  
-  if (log_RMX ) {
-    myGNSS.setAutoRXMSFRBX(false, false); // Disable the automatic RXM SFRBX messages
-    myGNSS.setAutoRXMRAWX(false, false); // Disable the automatic RXM RAWX messages
-  }
-  
-  delay(1000); // Allow time for any remaining messages to arrive
+	logging = false; // Set flag to false
+	BLE_message=true;
+	strcpy(txString,"Turning datalogging OFF!");
+
+	if (log_RMX ) {
+	  myGNSS.setAutoRXMSFRBX(false, false); // Disable the automatic RXM SFRBX messages
+	  myGNSS.setAutoRXMRAWX(false, false); // Disable the automatic RXM RAWX messages
+	}
+	if (log_NAVPVT) {
+	  myGNSS.setAutoPVT(false, false); // Enable automatic NAV PVT messages without callback to printPVTdata
+	  }
+	if (log_NAVPVAT) {
+	  myGNSS.setAutoNAVPVAT(false, false); // Enable automatic NAV PVT messages without callback to printPVTdata
+	}
+	if (log_NAVATT) {
+	  myGNSS.setAutoNAVATT(false, false); 
+	}
+	if (log_ESFINS ) {
+	   myGNSS.setAutoESFINS(false, false); 
+	}
+	if (log_ESFRAW ) {     
+	  myGNSS.setAutoESFRAW(false, false);    
+	}
+	if (log_ESFMEAS) {
+	  myGNSS.setAutoESFMEAS(false, false); 
+	}
+	if (log_ESFALG ) {
+	  myGNSS.setAutoESFALG(false, false); 
+	}
+    delay(1000); // Allow time for any remaining messages to arrive
     myGNSS.checkUblox(); // Process any remaining data
   
-  uint16_t remainingBytes = myGNSS.fileBufferAvailable(); // Check if there are any bytes remaining in the file buffer
+    uint16_t remainingBytes = myGNSS.fileBufferAvailable(); // Check if there are any bytes remaining in the file buffer
     
     while (remainingBytes > 0) // While there is still data in the file buffer
     {
@@ -730,36 +755,34 @@ void stop_logging() {
     Serial.println(maxBufferBytes);
   
   
-  // out put file string
-  char filesstring[50];
-  sprintf(filesstring, " Files: %s, %s",headerFileName, dataFileName);
-  strcat(txString,filesstring);
-  Serial.println("Turning datalogging OFF!");
-  Serial.println(filesstring);
-  LED_blink(25, 4);
+	// output file string
+	char filesstring[50];
+	sprintf(filesstring, " Files: %s, %s",headerFileName, dataFileName);
+	strcat(txString,filesstring);
+	Serial.println("Turning datalogging OFF!");
+	Serial.println(filesstring);
+	LED_blink(25, 4);
 
-  
-  gotoCommandMode(); //Puts OpenLog in command mode.
-  OpenLog.print("append ");
-  OpenLog.print(headerFileName);
-  OpenLog.write(13); //This is 
-   
-  // while (1) {
-    // if (OpenLog.available())
-      // if (OpenLog.read() == '>') break;
-  // }
-  Serial.println("Ready to append");  
-  LED_blink(25, 4);
-  readDateTime();
-  Write_stop();
-  OpenLog.print(F("The total number of bytes written to SD card is: ")); // Print how many bytes have been written to SD card
-    OpenLog.println(bytesWritten);
-  OpenLog.print(F("The maximum number of bytes which the file buffer has contained is: "));
-    OpenLog.println(maxBufferBytes);
-  Serial.println("Measurement stopped successfully");  
+
+	gotoCommandMode(); //Puts OpenLog in command mode.
+	OpenLog.print("append ");
+	OpenLog.print(headerFileName);
+	OpenLog.write(13); //This is 
+
+	// while (1) {
+	// if (OpenLog.available())
+	  // if (OpenLog.read() == '>') break;
+	// }
+	Serial.println("Ready to append");  
+	LED_blink(25, 4);
+	readDateTime();
+	Write_stop();
+	OpenLog.print(F("The total number of bytes written to SD card is: ")); // Print how many bytes have been written to SD card
+	OpenLog.println(bytesWritten);
+	OpenLog.print(F("The maximum number of bytes which the file buffer has contained is: "));
+	OpenLog.println(maxBufferBytes);
+	Serial.println("Measurement stopped successfully");  
 }
-
-
 
 
 
@@ -920,7 +943,43 @@ void  setIMUcal( String rxValue){
 }
 
 
-
+// Get IMU data and send them over BLE+serial for manual check
+void  check_IMU(){  
+   Send_tx_String(txString);
+   strcpy(txString,"");
+   if (!logging) {
+		myGNSS.getESFSTATUS();  // call for ESF-STATUS message 
+		strcat(txString,"IMU check \n# --------------------------------------\n");  
+		strcat(txString,"Fusion Mode: ");  
+		sprintf(subString,"%d",myGNSS.packetUBXESFSTATUS->data.fusionMode);  
+		strcat(txString,subString); 
+		
+		strcat(txString,"\nIMU sensors status: "); // See interface description for explanation of values.
+		for (uint16_t i = 0; i <7 ; i++)
+		{
+		sprintf(subString,"\nSensor %d:",i );  
+        strcat(txString,subString); 
+		int st1 = myGNSS.packetUBXESFSTATUS->data.status[i].sensStatus1.all;
+        int st2 = myGNSS.packetUBXESFSTATUS->data.status[i].sensStatus2.all;
+        sprintf(subString,"type %d, ",st1/4);
+        strcat(txString,subString); 
+        sprintf(subString,"used %d,",st1%4/2);
+        strcat(txString,subString); 
+        sprintf(subString,"ready %d,",st1%2);
+        strcat(txString,subString); 
+        sprintf(subString,"calsts %d,",st2/4);
+        strcat(txString,subString); 
+        sprintf(subString,"timests %d,",st2%4);
+        strcat(txString,subString); 
+			  //sprintf(subString,"\nSensor %d type %d, used %d ready %d calsts %d timests %d",i, st1/4, st1%4/2, st1%2, st2/4, st2%4);   
+        //        Serial.print(st1);
+        //        Serial.println(st2); 
+			}
+  } else {
+    strcpy(txString,"Datalogging running. Can't run IMU _check now!");
+  }
+  Send_tx_String(txString);
+}
 
 
 
@@ -956,6 +1015,8 @@ class MyCallbacks: public BLECharacteristicCallbacks {
            BLE_start=true;
         } else if (rxValue.find("STOP") != -1) {
            BLE_stop=true;
+		} else if (rxValue.find("CHECKIMU") != -1) {
+		    check_IMU();
         } else if (rxValue.find("RATE") != -1) {
            char passValue[40];
            for (int i = 0; i < rxValue.length(); i++){
@@ -1143,13 +1204,19 @@ void setup(){
     // setting up GPS for automatic messages
   	setupGNSS();
   	delay(200);
-
+	
+	// scall for GPS status messages
+	if (log_STATUS ){   
+		myGNSS.getESFSTATUS();
+		myGNSS.getESFALG();
+	}
+	
    //Check fusion mode
    if (IMUcalibration){   
 		checkIMUcalibration();
 		Serial.print(txString);
    }
-  
+	
    Serial.println(F("Setup completeded."));
    lastPrint = millis(); // Initialize lastPrint
 }
@@ -1277,6 +1344,13 @@ void loop(){
     Send_tx_String(txString);
     lastTime2 = millis(); //Update the timer
   }
+	
+  if (log_STATUS  and (millis() - lastTime_logstatus > 60000)){   
+    myGNSS.getESFSTATUS();
+	myGNSS.getESFALG();
+    lastTime_logstatus = millis(); //Update the timer
+  }
+
 
   delay(5);
 }
