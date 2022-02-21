@@ -51,9 +51,9 @@ class MSG_type:
 
 class UBXdata:
     
-    MSG_list=['PVT','ATT','MEAS','INS']
-    MSG_id_list=['NAV-PVT','NAV-ATT','ESF-MEAS','ESF-INS']
-    extr_list=['ATT','PVT','INS']
+    MSG_list=['PVT','ATT','MEAS','INS','ALG', 'STATUS','PVAT']
+    MSG_id_list=['NAV-PVT','NAV-ATT','ESF-MEAS','ESF-INS','ESF-ALG','ESF-STATUS','NAV-PVAT']
+    extr_list=['ATT','PVT','INS','PVAT']
     
     def __init__(self,filepath,name=''):
         """
@@ -122,6 +122,58 @@ class UBXdata:
 
 # %% #########function definitions #############
 
+
+    
+def check_data(data):
+    """
+    Check data and produce some plots
+    
+    Input:
+    --------------
+    data        Member of class UBXdata
+    
+    """
+    
+    
+    print('\n\n###############################\n-----------------------------',
+          data.name,
+          '\n----------------------------\n###############################\n')
+    for attr in data.MSG_list:
+        try:   
+            d=getattr(data,attr)
+            print('\n',attr,'\n----------------------------')
+            print('Length:')
+            print(len(d.parsed))
+            print('Time intervall (s):')
+            print((d.iTOW[:5]-d.iTOW[0])/1000)
+        except Exception as e: 
+                print(e)
+            
+            
+    print('\nOthers: \n----------------------------')   
+    for c in data.other[:10]: 
+        print(c.identity,', bit length:',c.length) 
+    
+    print('\nCorrupted: \n----------------------------')   
+    for c in data.corrupt[:10]: 
+        print(c)      
+        
+    try:
+        if data.PVAT.parsed != []:
+            data.plot_att(MSG='PVAT')
+        else:
+            data.plot_att()
+    except AttributeError:
+        print('no attitude messages found')
+        
+
+
+
+
+
+
+
+
 def plot_att(data,MSG='ATT',ax=[]):
     if ax==[]:
         fig=pl.figure()
@@ -133,9 +185,16 @@ def plot_att(data,MSG='ATT',ax=[]):
     
     ax2=ax.twinx()    
     
-    ax.plot((d.iTOW-d.iTOW[0])/1000,d.pitch,'o-r',label='pitch')
-    ax.plot((d.iTOW-d.iTOW[0])/1000,d.roll,'x-k',label='roll')
-    ax2.plot((d.iTOW-d.iTOW[0])/1000,d.heading,'x-b',label='heading')
+    if MSG=='PVAT':
+        ax.plot((d.iTOW-d.iTOW[0])/1000,d.vehPitch,'o-r',label='pitch')
+        ax.plot((d.iTOW-d.iTOW[0])/1000,d.vehRoll,'x-k',label='roll')
+        ax2.plot((d.iTOW-d.iTOW[0])/1000,d.vehHeading,'x-b',label='heading')
+    else:
+        ax.plot((d.iTOW-d.iTOW[0])/1000,d.pitch,'o-r',label='pitch')
+        ax.plot((d.iTOW-d.iTOW[0])/1000,d.roll,'x-k',label='roll')
+        ax2.plot((d.iTOW-d.iTOW[0])/1000,d.heading,'x-b',label='heading')
+    
+    
     ax.set_ylabel('pitch/roll (deg)')
     ax2.set_ylabel('heading (deg)')
     ax.set_xlabel('time (s)')
@@ -145,6 +204,9 @@ def plot_att(data,MSG='ATT',ax=[]):
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax2.legend(lines + lines2, labels + labels2, loc=0)   
     pl.title(data.name)
+    
+    
+    
     
 def plot_elevation_time(data,MSG='PVT',ax=[],title=[]):
     if ax==[]:
@@ -200,43 +262,6 @@ def plot_longlat(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow):
         
 
 
-
-    
-def check_data(data):
-    """
-    Check data and produce some plots
-    
-    Input:
-    --------------
-    data        Member of class UBXdata
-    
-    """
-    
-    
-    print('\n\n###############################\n-----------------------------',
-          data.name,
-          '\n----------------------------\n###############################\n')
-    for attr in ['PVT','ATT','MEAS','INS']:
-        try:   
-            d=getattr(data,attr)
-            print('\n',attr,'\n----------------------------')
-            print('Length:')
-            print(len(d.parsed))
-            print('Time intervall (s):')
-            print((d.iTOW[:5]-d.iTOW[0])/1000)
-        except Exception as e: 
-                print(e)
-            
-            
-    print('\nOthers: \n----------------------------')   
-    for c in data.other[:10]: 
-        print(c.identity,', bit length:',c.length) 
-    
-    print('\nCorrupted: \n----------------------------')   
-    for c in data.corrupt[:10]: 
-        print(c)      
-        
-    data.plot_att()
 
 
 

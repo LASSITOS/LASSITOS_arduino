@@ -67,9 +67,9 @@ bool log_RMX = false;
 bool log_ESFRAW  = false;
 bool log_ESFMEAS = false;
 bool log_ESFALG = false;
-bool log_NAVPVAT = false;
-bool log_NAVPVT = true;
-bool log_NAVATT = true;
+bool log_NAVPVAT = true;
+bool log_NAVPVT = false;
+bool log_NAVATT = false;
 bool log_ESFINS = true;
 bool log_STATUS = true;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
