@@ -70,7 +70,7 @@ bool log_ESFALG = false;
 bool log_NAVPVAT = true;
 bool log_NAVPVT = false;
 bool log_NAVATT = false;
-bool log_ESFINS = true;
+bool log_ESFINS = false;
 bool log_STATUS = true;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
