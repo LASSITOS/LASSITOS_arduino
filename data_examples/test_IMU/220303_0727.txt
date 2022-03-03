@@ -1,0 +1,20 @@
+# GNSS log file
+# Date: 2022-3-3
+# Time: 7:27:37
+# --------------------------------------
+# UBX binary data are in  file: 220303_0727.ubx 
+# --------------------------------------
+Script version: v3.0
+Measurements settings: 
+IMU calibration: 0
+NavigationFrequency: 1
+DynamicModel: 0
+log_NAVATT: 0
+log_NAVPVT: 0
+log_NAVPVAT: 0
+log_ESFINS: 0
+log_ESFRAW: 0
+log_ESFMEAS: 0
+log_ESFALG: 0
+log_RMX : 0
+# --------------------------------------
