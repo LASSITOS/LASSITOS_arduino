@@ -17,6 +17,8 @@ sys.path.append(r'C:\Users\Laktop\GNSS_arduino')
 sys.path.append(r'C:\Users\AcCap\GNSS_arduino')
 from UBXdata import *
 
+# PC_loc=filepath=r'C:\Users\AcCap'
+PC_loc=filepath=r'C:\Users\Laktop'
 
 # %% read data
 filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples\test_IMU'
@@ -65,3 +67,68 @@ filepath=r'C:\Users\AcCap\GNSS_arduino\data_examples\test_IMU'
 # no calibration. In office without GNSS reception
 PVAT=UBXdata(filepath+r'\000101_1026.ubx')
 check_data(PVAT)    
+
+
+# %% test IMU calibration 02.03.2022
+filepath=PC_loc+r'\GNSS_arduino\data_examples\test_IMU'
+
+""""
+Short tube with PVAT and OpenLog
+1. Drive from GI to Fred Meyer on mode4 , system calibrating
+2. Drive from Pum Station to Home Run Mode0, system calibrating
+3. Hanging tube in front of house. Oschillations in different directions
+4.  Hanging tube in front of house. Still until battery run low
+""" 
+
+# GI-Freds
+M4_drive=UBXdata(filepath+r'\220303_0530.ubx')
+
+# Car ride Fred-Home Run
+M0_drive=UBXdata(filepath+r'\220303_0652.ubx')
+
+# Oschillating outside
+M0_osci=UBXdata(filepath+r'\220303_0720.ubx')
+
+# still all night
+M0_still=UBXdata(filepath+r'\220303_0727.ubx')
+
+
+
+# %% analazie data M4 drive
+check_data(M4_drive)
+
+M4_drive.plot_mapOSM(z='height',MSG='PVAT')
+M4_drive.plot_mapOSM(z='iTOW',MSG='PVAT')
+
+M4_drive.plot_elevation_time(MSG='PVAT')
+
+
+# %% analazie data M0 drive
+check_data(M0_drive)
+
+M0_drive.plot_mapOSM(z='height',MSG='PVAT')
+M0_drive.plot_mapOSM(z='iTOW',MSG='PVAT')
+
+M0_drive.plot_elevation_time(MSG='PVAT')
+
+"""\
+    Tube rolled at entrance of sheep creeck (derapata in curva)
+    Afterwards GPS drifted strongly. (Probably no signal and IMU giving bad correction data. I wonder if it would happen in mode 4.) 
+    """
+    
+ # %% analazie data M0_osci
+check_data(M0_osci)
+
+M0_osci.plot_mapOSM(z='height',MSG='PVAT')
+M0_osci.plot_mapOSM(z='iTOW',MSG='PVAT')
+
+M0_osci.plot_elevation_time(MSG='PVAT')
+
+
+ # %% analazie data M0_still
+check_data(M0_still)
+
+M0_still.plot_mapOSM(z='height',MSG='PVAT')
+M0_still.plot_mapOSM(z='iTOW',MSG='PVAT')
+
+M0_still.plot_elevation_time(MSG='PVAT')
