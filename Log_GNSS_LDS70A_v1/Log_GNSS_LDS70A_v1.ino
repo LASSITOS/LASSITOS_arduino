@@ -17,7 +17,7 @@
   Connect the SD card to the following pins (using V_SPI):
    * SD Card | ESP32
    *    CS       CS0   GPIO5
-   *    CMD      MOSI  GPIO23
+   *    CMD      MOSI  GPIO32  ! GPIO 23 is used by I2C port to GNSS! Use other PIN
    *    VDD      3.3V
    *    CLK      SCK   GPIO18
    *    GND      GND
@@ -48,10 +48,8 @@ HardwareSerial RS232(2);
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 long lastTime2 = 0; //Second simple local timer. 
 long lastTime_logstatus = 0; //Second simple local timer. 
-long  logTime_laser;
+long logTime_laser;
 
-File dataFile; //File that all data is written to
-File headerFile; //File containing a header with settings dscription
 
 int statLED = 13;
 
@@ -59,18 +57,21 @@ int statLED = 13;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #define SCK  18
 #define MISO  19
-#define MOSI  23
+#define MOSI  32
 #define CS  5
 #define SPI_rate 80000000
+#define CD_pin 27         // chip detect pin is shorted to GND if a card is inserted. (Otherwise pulled up by 10kOhm)
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 #define sdWriteSize 256 // Write data to the SD card in blocks of 512 bytes
-
+uint8_t *myBuffer; // A buffer to hold the data while we write it to SD car
+SPIClass spi = SPIClass(VSPI);
 
 char headerFileName[24]; //Max file name length is 23 characters)
 char dataFileName[24]; //Max file name length is 23 characters)
-char hFN2[12] ; 
-char dataFileName2[12];
+File dataFile; //File that all data is written to
+File headerFile; //File containing a header with settings description
+
 
 
 // settings altimeter LSD70A
@@ -79,20 +80,20 @@ char dataFileName2[12];
 int PIN_Rx = 16; // 16 = Hardware RX pin,
 int PIN_Tx = 17; // 17 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-int baudrateRS232= 115200 ;
+#define baudrateRS232 115200 
 
-#define Laser_fileBufferSize 1024 // Allocate 32KBytes of RAM for UBX message storage
-#define logIntervall_laser 1000
+#define Laser_fileBufferSize 512 // Allocate 512Bytes of RAM for UART serial storage
+#define flush_intervall 60000
 
 
 
 
 // Setting for u-blox 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-bool logging = false;
+bool logging = true;
 
 bool IMUcalibration=false;
-int NavigationFrequency = 10;
+int NavigationFrequency = 1;
 dynModel DynamicModel = (dynModel)4;
 bool log_RMX = false;
 bool log_ESFRAW  = false;
@@ -260,6 +261,126 @@ void checkIMUcalibration(){
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
+void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
+    Serial.printf("Listing directory: %s\n", dirname);
+
+    File root = fs.open(dirname);
+    if(!root){
+        Serial.println("Failed to open directory");
+        return;
+    }
+    if(!root.isDirectory()){
+        Serial.println("Not a directory");
+        return;
+    }
+
+    File file = root.openNextFile();
+    while(file){
+        if(file.isDirectory()){
+            Serial.print("  DIR : ");
+            Serial.println(file.name());
+            if(levels){
+                listDir(fs, file.path(), levels -1);
+            }
+        } else {
+            Serial.print("  FILE: ");
+            Serial.print(file.name());
+            Serial.print("  SIZE: ");
+            Serial.println(file.size());
+        }
+        file = root.openNextFile();
+    }
+}
+
+void createDir(fs::FS &fs, const char * path){
+    Serial.printf("Creating Dir: %s\n", path);
+    if(fs.mkdir(path)){
+        Serial.println("Dir created");
+    } else {
+        Serial.println("mkdir failed");
+    }
+}
+
+void removeDir(fs::FS &fs, const char * path){
+    Serial.printf("Removing Dir: %s\n", path);
+    if(fs.rmdir(path)){
+        Serial.println("Dir removed");
+    } else {
+        Serial.println("rmdir failed");
+    }
+}
+
+void readFile(fs::FS &fs, const char * path){
+    Serial.printf("Reading file: %s\n", path);
+
+    File file = fs.open(path);
+    if(!file){
+        Serial.println("Failed to open file for reading");
+        return;
+    }
+
+    Serial.print("Read from file: ");
+    while(file.available()){
+        Serial.write(file.read());
+    }
+   file.close();
+}
+
+void writeFile(fs::FS &fs, const char * path, const char * message){
+    Serial.printf("Writing file: %s\n", path);
+
+    File file = fs.open(path, FILE_WRITE);
+    if(!file){
+        Serial.println("Failed to open file for writing");
+        return;
+    }
+    if(file.print(message)){
+        Serial.println("File written");
+    } else {
+        Serial.println("Write failed");
+    }
+    file.close();
+}
+
+void appendFile(fs::FS &fs, const char * path, const char * message){
+    Serial.printf("Appending to file: %s\n", path);
+
+    File file = fs.open(path, FILE_APPEND);
+    if(!file){
+        Serial.println("Failed to open file for appending");
+        return;
+    }
+    if(file.print(message)){
+        Serial.println("Message appended");
+    } else {
+        Serial.println("Append failed");
+    }
+    file.close();
+}
+
+void renameFile(fs::FS &fs, const char * path1, const char * path2){
+    Serial.printf("Renaming file %s to %s\n", path1, path2);
+    if (fs.rename(path1, path2)) {
+        Serial.println("File renamed");
+    } else {
+        Serial.println("Rename failed");
+    }
+}
+
+void deleteFile(fs::FS &fs, const char * path){
+    Serial.printf("Deleting file: %s\n", path);
+    if(fs.remove(path)){
+        Serial.println("File deleted");
+    } else {
+        Serial.println("Delete failed");
+    }
+}
+
+
+
+
+
+
 
 
 void readDateTime(){
@@ -343,7 +464,7 @@ void  log_settings() {
 
 
 // Make new files in SD card. file names are derived from GNSS time if available. 
-void  makeFiles() {  
+void  makeFiles(fs::FS &fs) {  
   Serial.println(F("Making new files"));
 
   // Check for GPS to have good time and date
@@ -356,7 +477,7 @@ void  makeFiles() {
         printDateTime();
         Serial.println();
         break;
-    }else if (count > 5) {
+    }else if (count > 3) {
         Year = 2000 ;
         Month = 01;
         Day = 01;
@@ -374,23 +495,26 @@ void  makeFiles() {
     Serial.print(F("Date and time: "));
     printDateTime();
     Serial.println();
-    LED_blink(1000, 5);
+    LED_blink(1000, 3);
   }
   
-  sprintf(headerFileName, "%02d%02d%02d_%02d%02d.txt", Year%1000 ,Month ,Day ,Hour,Minute);  // create name of header file
-  sprintf(dataFileName, "%02d%02d%02d_%02d%02d.ubx", Year%1000 ,Month ,Day ,Hour,Minute);   // create name of data file
+  sprintf(headerFileName, "/a%02d%02d%02d_%02d%02d.txt", Year%1000 ,Month ,Day ,Hour,Minute);  // create name of header file
+  sprintf(dataFileName, "/a%02d%02d%02d_%02d%02d.ubx", Year%1000 ,Month ,Day ,Hour,Minute);   // create name of data file
+//  strcpy(headerFileName, "/data.txt");  // create name of header file
+//  strcpy(dataFileName, "/data.ubx");   // create name of data file
   Serial.println(headerFileName);
   Serial.println(dataFileName);
   
   
 
   Serial.print("Making header file.");
-  headerFile = SD.open(headerFileName, FILE_WRITE);
-  if(!headerFile)
-  {
+  headerFile = fs.open(headerFileName, FILE_WRITE);
+  if(!headerFile){
     Serial.println(F("Failed to create header file! Freezing..."));
+    Serial.println(headerFileName);
     while (1);
   }
+  
   Serial.print(F("created file: "));
   Serial.println(headerFileName);
   Write_header();
@@ -401,10 +525,12 @@ void  makeFiles() {
 
   Serial.print("Making data file:");
   Serial.println(dataFileName);
-  dataFile = SD.open(dataFileName, FILE_WRITE);
-  if(!dataFile)
-  {
+  
+  dataFile=fs.open(dataFileName, FILE_WRITE);
+  // dataFile = SD.open("/data2.ubx", FILE_WRITE);
+  if(!dataFile){
     Serial.println(F("Failed to create header file! Freezing..."));
+    Serial.println(dataFileName);
     while (1);
   }
   Serial.print("Created file: ");
@@ -489,7 +615,7 @@ void setupGNSS(){
 
 
 // Stop data logging process
-void stop_logging() {
+void stop_logging(fs::FS &fs) {
 	logging = false; // Set flag to false
 	BLE_message=true;
 	strcpy(txString,"Turning datalogging OFF!");
@@ -519,35 +645,36 @@ void stop_logging() {
 	if (log_ESFALG ) {
 	  myGNSS.setAutoESFALG(false, false); 
 	}
-    delay(1000); // Allow time for any remaining messages to arrive
-    myGNSS.checkUblox(); // Process any remaining data
   
-    uint16_t remainingBytes = myGNSS.fileBufferAvailable(); // Check if there are any bytes remaining in the file buffer
-    
-    while (remainingBytes > 0) // While there is still data in the file buffer
+  
+  delay(1000); // Allow time for any remaining messages to arrive
+  myGNSS.checkUblox(); // Process any remaining data
+  uint16_t remainingBytes = myGNSS.fileBufferAvailable(); // Check if there are any bytes remaining in the file buffer
+  
+  while (remainingBytes > 0) // While there is still data in the file buffer
+  {
+    digitalWrite(LED_BUILTIN, HIGH); // Flash LED_BUILTIN while we write to the SD card
+    uint8_t myBuffer[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
+    uint16_t bytesToWrite = remainingBytes; // Write the remaining bytes to SD card sdWriteSize bytes at a time
+    if (bytesToWrite > sdWriteSize)
     {
-      digitalWrite(LED_BUILTIN, HIGH); // Flash LED_BUILTIN while we write to the SD card
-      uint8_t myBuffer[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
-      uint16_t bytesToWrite = remainingBytes; // Write the remaining bytes to SD card sdWriteSize bytes at a time
-      if (bytesToWrite > sdWriteSize)
-      {
-        bytesToWrite = sdWriteSize;
-      }
-  
-      myGNSS.extractFileBufferData((uint8_t *)&myBuffer, bytesToWrite); // Extract bytesToWrite bytes from the UBX file buffer and put them into myBuffer
-      dataFile.write(myBuffer, bytesToWrite); // Write bytesToWrite bytes from myBuffer to the ubxDataFile on the SD card
-      
-      bytesWritten += bytesToWrite; // Update bytesWritten
-      remainingBytes -= bytesToWrite; // Decrement remainingBytes
+      bytesToWrite = sdWriteSize;
     }
-    digitalWrite(LED_BUILTIN, LOW); // Turn LED_BUILTIN off
 
-    Serial.print(F("The total number of bytes written to SD card is: ")); // Print how many bytes have been written to SD card
-    Serial.println(bytesWritten);
+    myGNSS.extractFileBufferData((uint8_t *)&myBuffer, bytesToWrite); // Extract bytesToWrite bytes from the UBX file buffer and put them into myBuffer
+    dataFile.write(myBuffer, bytesToWrite); // Write bytesToWrite bytes from myBuffer to the ubxDataFile on the SD card
+    
+    bytesWritten += bytesToWrite; // Update bytesWritten
+    remainingBytes -= bytesToWrite; // Decrement remainingBytes
+  }
+  digitalWrite(LED_BUILTIN, LOW); // Turn LED_BUILTIN off
 
-    uint16_t maxBufferBytes = myGNSS.getMaxFileBufferAvail(); // Show how full the file buffer has been (not how full it is now)
-    Serial.print(F("The maximum number of bytes which the file buffer has contained is: "));
-    Serial.println(maxBufferBytes);
+  Serial.print(F("The total number of bytes written to SD card is: ")); // Print how many bytes have been written to SD card
+  Serial.println(bytesWritten);
+
+  uint16_t maxBufferBytes = myGNSS.getMaxFileBufferAvail(); // Show how full the file buffer has been (not how full it is now)
+  Serial.print(F("The maximum number of bytes which the file buffer has contained is: "));
+  Serial.println(maxBufferBytes);
   
   
 	// output file string
@@ -557,10 +684,10 @@ void stop_logging() {
 	Serial.println("Turning datalogging OFF!");
 	Serial.println(filesstring);
 	LED_blink(25, 4);
-  dataFile.close(); // Close the data file
+    dataFile.close(); // Close the data file
+	Serial.println("Datafile closed.");
 	
-	
-	headerFile = SD.open(headerFileName, FILE_APPEND);
+	headerFile = fs.open(headerFileName, FILE_APPEND);
 	Serial.println("Ready to append");  
 	LED_blink(25, 4);
 	readDateTime();
@@ -569,8 +696,11 @@ void stop_logging() {
 	headerFile.println(bytesWritten);
 	headerFile.print(F("The maximum number of bytes which the file buffer has contained is: "));
 	headerFile.println(maxBufferBytes);
+    headerFile.close(); 
+    Serial.println("Header file closed.");
+    listDir(SD, "/", 0);
 	Serial.println("Measurement stopped successfully"); 
-  headerFile.close(); 
+  
 }
 
 
@@ -583,7 +713,7 @@ void restart_logging() {
   Serial.println(txString);
   LED_blink(100, 5);
 
-  makeFiles();
+  makeFiles(SD);
   delay(500);
   logging = true;
   setupGNSS();
@@ -970,18 +1100,29 @@ void setup(){
 
     // Setup SD connection
     //--------------------
-    SPIClass spi = SPIClass(VSPI);
-    spi.begin(SCK, MISO, MOSI, CS);
     
+    
+    Serial.print("CD pin value:");
+    Serial.println(digitalRead(CD_pin));
+    if (!digitalRead(CD_pin)){
+      Serial.println("No SD card inserted. Waiting for it.");
+      while (1){
+        LED_blink(200, 3);
+        delay(2000);
+        if (digitalRead(CD_pin)) { 
+          Serial.println(F("SD card inset=rted continuing."));
+          break;
+        }
+      }
+    }
+
+	spi.begin(SCK, MISO, MOSI, CS);							   
     if(!SD.begin(CS,spi,SPI_rate)){
         Serial.println("Card Mount Failed");
-        return;
+        while (1);
     }
+    
     uint8_t cardType = SD.cardType();
-    if(cardType == CARD_NONE){
-        Serial.println("No SD card attached");
-        return;
-    }
     Serial.print("SD Card Type: ");
     if(cardType == CARD_MMC){
         Serial.println("MMC");
@@ -989,16 +1130,35 @@ void setup(){
         Serial.println("SDSC");
     } else if(cardType == CARD_SDHC){
         Serial.println("SDHC");
+    } else if(cardType == CARD_NONE){
+        Serial.println("No SD card attached. ");
     } else {
         Serial.println("UNKNOWN");
     }
+    listDir(SD, "/", 0);
+    uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+    Serial.printf("SD Card Size: %lluMB\n", cardSize);
     Serial.printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
     Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
     
     
     if (logging) {  
-      makeFiles();
-      delay(1000);
+      makeFiles(SD);
+//      strcpy(dataFileName,  "/dump.ubx");   // create name of data file
+//      Serial.print("Making data file:");
+//      Serial.println(dataFileName);
+//      
+//      dataFile=SD.open( dataFileName, FILE_WRITE);
+//      if(!dataFile){
+//          Serial.print("Freezing! Could no open file for appending: ");
+//          Serial.println(dataFileName);
+//          while (1);
+//      } else {
+//          Serial.print("Opened file for appending: ");
+//          Serial.println(dataFileName);
+//          dataFile.println("Test");
+//      }
+//      delay(1000);
     } else {
       BLE_message=true;
       strcpy(txString,"Waiting for command 'START' over Serial of BLE for starting logging data!");
@@ -1015,15 +1175,15 @@ void setup(){
     	myGNSS.getESFALG();
     }
     
-     //Check fusion mode
-     if (IMUcalibration){   
-    	checkIMUcalibration();
-    	Serial.print(txString);
-     }
+    //Check fusion mode
+    if (IMUcalibration){   
+      checkIMUcalibration();
+      Serial.print(txString);
+    }
     
-     Serial.println(F("Setup completeded."));
-     lastPrint = millis(); // Initialize lastPrint
-     logTime_laser  = millis(); // logTime_laser  
+    Serial.println(F("Setup completeded."));
+    lastPrint = millis(); // Initialize lastPrint
+    logTime_laser  = millis(); // logTime_laser  
 }
 
 
@@ -1058,16 +1218,17 @@ void loop(){
 
     //  Laser data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if (millis() > (logTime_laser + logIntervall_laser )){
-      while ( RS232.available()) {   
-          dataFile.write( RS232.read());   
+    if ( RS232.available() >= sdWriteSize) {   
+      Serial.println(",");
+      Serial.println(RS232.available());
+      while(RS232.available()){
+        dataFile.write(RS232.read());   
       }
-      logTime_laser  = millis();
     }
-    
+
 
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if (millis() > (lastPrint + 3000)) // Print bytesWritten once per second
+    if (millis() > (lastPrint + 5000)) // Print bytesWritten once per 5 seconds
     {
       Serial.println(" ");
       BLE_message=true;
@@ -1075,7 +1236,11 @@ void loop(){
       lastPrint = millis(); // Update lastPrint
     }
 
-
+    if (lastTime_logstatus + flush_intervall < millis()){
+      dataFile.flush();
+      lastTime_logstatus  = millis();
+      Serial.println("flushed");
+    }
   }
 
 
@@ -1105,7 +1270,7 @@ void loop(){
   
   
   if (BLE_stop){
-    stop_logging();
+    stop_logging(SD);
     BLE_stop= false;
   } else if (BLE_start){
     restart_logging();
@@ -1126,7 +1291,17 @@ void loop(){
       if (rxValue.indexOf("START") != -1) { 
         restart_logging();
       } else if (rxValue.indexOf("STOP") != -1) {
-        stop_logging();
+//         if(dataFile){
+//              Serial.println("Closing datafile:");
+//              Serial.println(dataFileName);
+//              delay(500);
+//              dataFile.close(); // Close the data file
+//              Serial.println("Datafile closed.");
+//              listDir(SD, "/", 0);
+//              readFile(SD,dataFileName);
+//         }
+//            logging = false;
+        stop_logging(SD);
       } else if (rxValue.indexOf("RATE") != -1) {
         setRate(rxValue);
       }else{

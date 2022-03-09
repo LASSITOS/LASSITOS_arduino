@@ -34,23 +34,37 @@ int PIN_Tx = 17; // Hardware TX pin,
 
 int baudrateRS232= 115200 ;
 unsigned long lastTime;
+#define sdWriteSize 256 // Write data to the SD card in blocks of 512 bytes
+uint8_t *myBuffer; // A buffer to hold the data while we write it to SD car
+
 
 void setup() {
   Serial.begin(115200);
   RS232.begin(baudrateRS232,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
   Serial.println("Starting ");
+
+  myBuffer = new uint8_t[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
+  while(RS232.read() >= 0);
 }
 
 void loop() {
   if (Serial.available()) {      // If anything comes in Serial (USB),
      RS232.write(Serial.read());   // read it and send it out Serial1 (pins 0 & 1)
+     Serial.println("Got data from Serial ");
      }
 
   if ( RS232.available()) {     // If anything comes in Serial1 (pins 0 & 1)
     Serial.write( RS232.read());   // read it and send it out Serial (USB)
 //    Serial.println("Got data from RS232. ");
   }
-
+//  if ( RS232.available() >= sdWriteSize) {   
+//      
+//      RS232.readBytes(myBuffer, sdWriteSize);
+//      Serial.println(",");
+//      Serial.write( myBuffer, sdWriteSize);   
+//      Serial.println(".");
+//    }
+    
   if ( (millis() - lastTime > 10000)){   
     lastTime = millis(); //Update the timer
     Serial.println("5 s are passed. ");

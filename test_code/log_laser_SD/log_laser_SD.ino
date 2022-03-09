@@ -9,7 +9,7 @@
  *    VDD      3.3V
  *    CLK      SCK
  *    VSS      GND
- *    D0       MISO
+ *    D0       MISO         ! GPIO 23 is used by I2C port to GNSS! Use other PIN
  *    D1       -
  */
 #include "FS.h"
@@ -25,7 +25,7 @@ HardwareSerial RS232(2);
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 long lastTime2 = 0; //Second simple local timer. 
 long lastTime_logstatus = 0; //Second simple local timer. 
-long  logTime_laser;
+long logTime_laser;
 
 #define statLED  13
 bool logging = true;
@@ -34,7 +34,7 @@ bool logging = true;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #define SCK  18
 #define MISO  19
-#define MOSI  23
+#define MOSI  32  //! GPIO 23 is used by I2C port to GNSS! Use other PIN
 #define CS  5
 #define SPI_rate 80000000
 #define CD_pin 27         // chip detect pin is shorted to GND if a card is inserted. (Otherwise pulled up by 10kOhm)
@@ -314,27 +314,27 @@ void loop(){
 //      dataFile.print(RS232.read());   
 //      Serial.println(".");
 //    }
-    if ( RS232.available() >= sdWriteSize) {   
-      Serial.println(".");
-      Serial.println(RS232.available());
-      
-      while(RS232.available()){
-        dataFile.write(RS232.read());   
-      }
-//    }else if (RS232.available()){
-//      Serial.println(RS232.available());
-    }
-    
-    
 //    if ( RS232.available() >= sdWriteSize) {   
-//      
-//      RS232.readBytes(myBuffer, sdWriteSize);
-//      Serial.println(",");
-//      dataFile.write( myBuffer, sdWriteSize);   
 //      Serial.println(".");
+//      Serial.println(RS232.available());
+//      
+//      while(RS232.available()){
+//        dataFile.write(RS232.read());   
+//      }
+////    }else if (RS232.available()){
+////      Serial.println(RS232.available());
 //    }
-//    if (logTime_laser +500 < millis()){
-//      dataFile.print( F("test, ")); 
+    
+    
+    if ( RS232.available() >= sdWriteSize) {   
+      
+      RS232.readBytes(myBuffer, sdWriteSize);
+//      Serial.println(",");
+      dataFile.write( myBuffer, sdWriteSize);   
+      Serial.println(".");
+    }
+//    if (logTime_laser +2000 < millis()){
+////      dataFile.print( F("test, ")); 
 //      Serial.println(".");
 //      logTime_laser = millis();
 //    }
