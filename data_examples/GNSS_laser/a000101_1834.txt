@@ -1,13 +1,13 @@
 # GNSS log file
 # Date: 2000-1-1
-# Time: 1:31:3
+# Time: 18:34:35
 # --------------------------------------
-# UBX binary data are in  file: /a000101_0131.ubx 
+# UBX binary data are in  file: /a000101_1834.ubx 
 # --------------------------------------
 Script version: v3.0
 Measurements settings: 
 IMU calibration: 0
-NavigationFrequency: 1
+NavigationFrequency: 5
 DynamicModel: 4
 log_NAVATT: 0
 log_NAVPVT: 0
@@ -18,7 +18,7 @@ log_ESFMEAS: 0
 log_ESFALG: 0
 log_RMX : 0
 # --------------------------------------
-Measurements stopped on: 2021-8-22, 0:25:42
+Measurements stopped on: 2021-8-22, 0:42:1
 # --------------------------------------
-The total number of bytes written to SD card is: 4464
-The maximum number of bytes which the file buffer has contained is: 376
+The total number of bytes written to SD card is: 34824
+The maximum number of bytes which the file buffer has contained is: 6392
