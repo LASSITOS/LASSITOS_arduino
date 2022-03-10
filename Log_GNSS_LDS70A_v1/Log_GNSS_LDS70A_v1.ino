@@ -90,7 +90,7 @@ int PIN_Tx = 17; // 17 = Hardware TX pin,
 
 // Setting for u-blox 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-bool logging = true;
+bool logging = false;
 
 bool IMUcalibration=false;
 int NavigationFrequency = 1;
@@ -160,6 +160,19 @@ void LED_blink(int len, int times ) { // Used for blinking LED  times at interva
 }
 
 
+// Send txSTring to BLE and Serial
+void Send_tx_String(char *txString){
+    // strcat(txString,"\n");
+    Serial.print(txString);
+
+    if (deviceConnected) {
+      pTxCharacteristic->setValue(txString);
+      pTxCharacteristic->notify();
+      BLE_message=false;
+    }
+
+    strcpy(txString,"");
+  }
 
 
 
@@ -169,55 +182,6 @@ void LED_blink(int len, int times ) { // Used for blinking LED  times at interva
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
-
-// Callback: printPVTdata will be called when new NAV PVT data arrives
-// See u-blox_structs.h for the full definition of UBX_NAV_PVT_data_t
-//         _____  You can use any name you like for the callback. Use the same name when you call setAutoPVTcallback
-//        /                  _____  This _must_ be UBX_NAV_PVT_data_t
-//        |                 /               _____ You can use any name you like for the struct
-//        |                 |              /
-//        |                 |              |
-void printPVTdata(UBX_NAV_PVT_data_t ubxDataStruct)
-{
-    Serial.println();
-
-    Serial.print(F("Time: ")); // Print the time
-    uint8_t hms = ubxDataStruct.hour; // Print the hours
-    if (hms < 10) Serial.print(F("0")); // Print a leading zero if required
-    Serial.print(hms);
-    Serial.print(F(":"));
-    hms = ubxDataStruct.min; // Print the minutes
-    if (hms < 10) Serial.print(F("0")); // Print a leading zero if required
-    Serial.print(hms);
-    Serial.print(F(":"));
-    hms = ubxDataStruct.sec; // Print the seconds
-    if (hms < 10) Serial.print(F("0")); // Print a leading zero if required
-    Serial.print(hms);
-    Serial.print(F("."));
-    unsigned long millisecs = ubxDataStruct.iTOW % 1000; // Print the milliseconds
-    if (millisecs < 100) Serial.print(F("0")); // Print the trailing zeros correctly
-    if (millisecs < 10) Serial.print(F("0"));
-    Serial.print(millisecs);
-
-    long latitude = ubxDataStruct.lat; // Print the latitude
-    Serial.print(F(" Lat: "));
-    Serial.print(latitude);
-
-    long longitude = ubxDataStruct.lon; // Print the longitude
-    Serial.print(F(" Long: "));
-    Serial.print(longitude);
-    Serial.print(F(" (degrees * 10^-7)"));
-
-    long altitude = ubxDataStruct.hMSL; // Print the height above mean sea level
-    Serial.print(F(" Height above MSL: "));
-    Serial.print(altitude);
-    Serial.println(F(" (mm)"));
-  
-  BLE_message=true;
-    sprintf(txString, "Time:  %02d:%02d:%02d.%04d,  Lat: %d, Long: %d, Elev: %.1d (m) /n",
-         ubxDataStruct.hour,ubxDataStruct.min,ubxDataStruct.sec,
-         latitude * 0.0000001,longitude * 0.0000001,altitude/1000);
-}
 
 
 void checkIMUcalibration(){
@@ -378,11 +342,6 @@ void deleteFile(fs::FS &fs, const char * path){
 
 
 
-
-
-
-
-
 void readDateTime(){
   Year = myGNSS.getYear();
   Month = myGNSS.getMonth();
@@ -426,10 +385,6 @@ void  Write_header() {
   headerFile.println(F(" "));
 }
 
-char nth_letter(int n)
-{
-    return "abcdefghijklmnopqrstuvwxyz"[n];
-}
 
 
 void  log_settings() {  
@@ -614,6 +569,14 @@ void setupGNSS(){
 
 
 
+
+
+// /////////////////////////////////////////////
+// ---------------------------------------------
+// Input parsing functions
+// ---------------------------------------------
+// /////////////////////////////////////////////
+
 // Stop data logging process
 void stop_logging(fs::FS &fs) {
 	logging = false; // Set flag to false
@@ -745,7 +708,7 @@ void setRate( String rxValue){
 //      myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
     } else {
       BLE_message=true;
-      sprintf(txString,"New frequency can not be parsed form string '%s'. Valid format is 'RATE:2:'",txString);
+      sprintf(txString,"New frequency can not be parsed form string '%s'. Valid format is 'RATE:2:'",rxValue);
       Serial.println(txString);
     }
   } else {
@@ -772,7 +735,7 @@ void setDynamicModel( String rxValue){
 //      myGNSS.setDynamicModel(DynamicModel); //Set new Dynamic Model for GNSS solution.
     } else {
       BLE_message=true;
-      sprintf(txString,"Dynamic model can not be parsed form string '%s'. Valid format is 'DYNMODEL:4:'",txString);
+      sprintf(txString,"Dynamic model can not be parsed form string '%s'. Valid format is 'DYNMODEL:4:'",rxValue);
       Serial.println(txString);
     }
   } else {
@@ -796,7 +759,7 @@ void setLogRMX( String rxValue){
       
     } else {
       BLE_message=true;
-      sprintf(txString,"RMX log setting can not be parsed form string '%s'. Valid format is 'LOGRMX:0:'",txString);
+      sprintf(txString,"RMX log setting can not be parsed form string '%s'. Valid format is 'LOGRMX:0:'",rxValue);
       Serial.println(txString);
     }
   } else {
@@ -820,7 +783,7 @@ void setLogFlag( String rxValue, bool &flag, String flagname){
       
     } else {
       BLE_message=true;
-      sprintf(txString,"%s log setting can not be parsed from string '%s'. Valid format is 'FLAGNAME:0:'",flagname,txString);
+      sprintf(txString,"%s log setting can not be parsed from string '%s'. Valid format is 'FLAGNAME:0:'",flagname,rxValue);
       Serial.println(txString);
     }
   } else {
@@ -844,7 +807,7 @@ void  setIMUcal( String rxValue){
       
     } else {
       BLE_message=true;
-      sprintf(txString,"IMUcalibration setting can not be parsed form string '%s'. Valid format is 'IMUCAL:0:'",txString);
+      sprintf(txString,"IMUcalibration setting can not be parsed form string '%s'. Valid format is 'IMUCAL:0:'",rxValue);
       Serial.println(txString);
     }
   } else {
@@ -853,6 +816,44 @@ void  setIMUcal( String rxValue){
     Serial.println(txString);
   }
 }
+
+
+void readFiles( String rxValue){  
+    /*
+    Read last files (haderfile and datafile) if no argument is passed  ("READ" ) otherwise read passed files (READ:<<filepath>>:).
+    */
+   if (!logging) {
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index =-1){
+      Serial.print("Reading file:");
+      Serial.println(headerFileName);
+      readFile(SD,headerFileName);
+      Serial.print("Reading file:");
+      Serial.println(dataFileName);
+      readFile(SD,dataFileName);
+      
+    } else if (index !=-1 and index2 !=-1){
+
+      char path[32];
+      rxValue.substring(index+1,index2).toCharArray(path,32);
+      
+      Serial.print("Reading file:");
+      Serial.println(path);
+      readFile(SD,path);
+      
+    } else {
+      BLE_message=true;
+      sprintf(txString,"File can not be parsed form string '%s'. Valid format is 'READ' or 'READ:<<filepath>>:' !",rxValue);
+      Serial.println(txString);
+    }
+  } else {
+    BLE_message=true;
+    strcpy(txString,"Datalogging running. Can't change dynamic navigation plattform now. First stop measurment!");
+    Serial.println(txString);
+  }
+}
+
 
 
 // Get IMU data and send them over BLE+serial for manual check
@@ -892,6 +893,11 @@ void  check_IMU(){
   }
   Send_tx_String(txString);
 }
+
+
+
+
+
 
 
 
@@ -1032,19 +1038,6 @@ void setup_BLE() {
 }
 
 
-// Send txSTring to BLE and Serial
-void Send_tx_String(char *txString){
-    // strcat(txString,"\n");
-    Serial.print(txString);
-
-    if (deviceConnected) {
-      pTxCharacteristic->setValue(txString);
-      pTxCharacteristic->notify();
-      BLE_message=false;
-    }
-
-    strcpy(txString,"");
-  }
 
 
 
@@ -1144,21 +1137,6 @@ void setup(){
     
     if (logging) {  
       makeFiles(SD);
-//      strcpy(dataFileName,  "/dump.ubx");   // create name of data file
-//      Serial.print("Making data file:");
-//      Serial.println(dataFileName);
-//      
-//      dataFile=SD.open( dataFileName, FILE_WRITE);
-//      if(!dataFile){
-//          Serial.print("Freezing! Could no open file for appending: ");
-//          Serial.println(dataFileName);
-//          while (1);
-//      } else {
-//          Serial.print("Opened file for appending: ");
-//          Serial.println(dataFileName);
-//          dataFile.println("Test");
-//      }
-//      delay(1000);
     } else {
       BLE_message=true;
       strcpy(txString,"Waiting for command 'START' over Serial of BLE for starting logging data!");
@@ -1196,7 +1174,7 @@ void loop(){
     //  GNSS data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     myGNSS.checkUblox(); // Check for the arrival of new data and process it.
-    while (myGNSS.fileBufferAvailable() >= sdWriteSize) // Check to see if we have at least sdWriteSize waiting in the buffer
+    if (myGNSS.fileBufferAvailable() >= sdWriteSize) // Check to see if we have at least sdWriteSize waiting in the buffer
     {
       digitalWrite(LED_BUILTIN, HIGH); // Flash LED_BUILTIN each time we write to the SD card
 
@@ -1209,7 +1187,7 @@ void loop(){
       bytesWritten += sdWriteSize; // Update bytesWritten
 
       // In case the SD writing is slow or there is a lot of data to write, keep checking for the arrival of new data
-      myGNSS.checkUblox(); // Check for the arrival of new data and process it.
+//      myGNSS.checkUblox(); // Check for the arrival of new data and process it.
 
       digitalWrite(LED_BUILTIN, LOW); // Turn LED_BUILTIN off again
       Serial.print(".");
@@ -1224,6 +1202,7 @@ void loop(){
       while(RS232.available()){
         dataFile.write(RS232.read());   
       }
+      delay(20);
     }
 
 
@@ -1291,19 +1270,12 @@ void loop(){
       if (rxValue.indexOf("START") != -1) { 
         restart_logging();
       } else if (rxValue.indexOf("STOP") != -1) {
-//         if(dataFile){
-//              Serial.println("Closing datafile:");
-//              Serial.println(dataFileName);
-//              delay(500);
-//              dataFile.close(); // Close the data file
-//              Serial.println("Datafile closed.");
-//              listDir(SD, "/", 0);
-//              readFile(SD,dataFileName);
-//         }
-//            logging = false;
+        logging = false;
         stop_logging(SD);
       } else if (rxValue.indexOf("RATE") != -1) {
         setRate(rxValue);
+      } else if (rxValue.indexOf("READ") != -1) {
+        readFiles(rxValue);
       }else{
         BLE_message=true;
         strcpy(txString,"Input can not be parsed retry!");
