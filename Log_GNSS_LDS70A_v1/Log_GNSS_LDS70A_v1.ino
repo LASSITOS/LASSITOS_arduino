@@ -43,7 +43,7 @@ SFE_UBLOX_GNSS myGNSS;
 #include <HardwareSerial.h>
 HardwareSerial RS232(2);
 
-#define version "v3.0"
+#define version "v1.0"
 
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 long lastTime2 = 0; //Second simple local timer. 
@@ -82,9 +82,9 @@ int PIN_Tx = 17; // 17 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define baudrateRS232 115200 
 
-#define Laser_fileBufferSize 512 // Allocate 512Bytes of RAM for UART serial storage
-#define flush_intervall 60000
-
+#define Laser_fileBufferSize 1024 // Allocate 512Bytes of RAM for UART serial storage
+#define flush_intervall 30000
+#define Laser_log_intervall 2000
 
 
 
@@ -107,8 +107,6 @@ bool log_STATUS = true;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 #define fileBufferSize 8192 // Allocate 32KBytes of RAM for UBX message storage
-
-
 
 unsigned long lastPrint; // Record when the last Serial print took place
 unsigned long bytesWritten = 0; // Record how many bytes have been written to SD card
@@ -283,7 +281,7 @@ void readFile(fs::FS &fs, const char * path){
         return;
     }
 
-    Serial.print("Read from file: ");
+    Serial.println("Read from file: ");
     while(file.available()){
         Serial.write(file.read());
     }
@@ -366,7 +364,7 @@ void  printDateTime() {
 }
 
 void  Write_header() {  
-  headerFile.println(F("# GNSS log file"));
+  headerFile.println(F("# GNSS and Laser altimeter log file"));
   headerFile.print("# Date: ");
   headerFile.print(Year);
   headerFile.print("-");
@@ -1174,7 +1172,7 @@ void loop(){
     //  GNSS data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     myGNSS.checkUblox(); // Check for the arrival of new data and process it.
-    if (myGNSS.fileBufferAvailable() >= sdWriteSize) // Check to see if we have at least sdWriteSize waiting in the buffer
+    while (myGNSS.fileBufferAvailable() >= sdWriteSize and (millis()-logTime_laser < Laser_log_intervall) ) // Check to see if we have at least sdWriteSize waiting in the buffer
     {
       digitalWrite(LED_BUILTIN, HIGH); // Flash LED_BUILTIN each time we write to the SD card
 
@@ -1199,12 +1197,18 @@ void loop(){
     if ( RS232.available() >= sdWriteSize) {   
       Serial.println(",");
       Serial.println(RS232.available());
+      Serial.println(millis());
+      dataFile.println(" ");
+      dataFile.print("# iTOW ");
+      dataFile.println(myGNSS.packetUBXNAVPVAT->data.iTOW);
       while(RS232.available()){
         dataFile.write(RS232.read());   
       }
+      Serial.println(millis());
+      dataFile.println("# end ");
       delay(20);
     }
-
+    logTime_laser  = millis();
 
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if (millis() > (lastPrint + 5000)) // Print bytesWritten once per 5 seconds
