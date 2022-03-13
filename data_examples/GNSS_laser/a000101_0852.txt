@@ -1,0 +1,24 @@
+# GNSS and Laser altimeter log file
+# Date: 2000-1-1
+# Time: 8:52:38
+# --------------------------------------
+# UBX binary data are in  file: /a000101_0852.ubx 
+# --------------------------------------
+Script version: v1.0
+Measurements settings: 
+IMU calibration: 0
+NavigationFrequency: 20
+DynamicModel: 4
+log_NAVATT: 0
+log_NAVPVT: 0
+log_NAVPVAT: 0
+log_ESFINS: 0
+log_ESFRAW: 0
+log_ESFMEAS: 0
+log_ESFALG: 0
+log_RMX : 0
+# --------------------------------------
+Measurements stopped on: 2021-8-22, 0:38:50
+# --------------------------------------
+The total number of bytes written to SD card is: 105828
+The maximum number of bytes which the file buffer has contained is: 8188
