@@ -19,7 +19,7 @@ from UBXdata import *
 
 # PC_loc=filepath=r'C:\Users\AcCap'
 PC_loc=filepath=r'C:\Users\Laktop'
-
+PC_loc=filepath=r'C:\Users\AcCap'
 # %% read data
 filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples\test_IMU'
 
@@ -93,7 +93,8 @@ M0_osci=UBXdata(filepath+r'\220303_0720.ubx')
 # still all night
 M0_still=UBXdata(filepath+r'\220303_0727.ubx')
 
-
+# angle chek in office
+angecheck=UBXdata(filepath+r'\220303_1939.ubx')  # not working!!!!!!!!!!!!!!
 
 # %% analazie data M4 drive
 check_data(M4_drive)
@@ -133,3 +134,8 @@ M0_still.plot_mapOSM(z='height',MSG='PVAT')
 M0_still.plot_mapOSM(z='iTOW',MSG='PVAT')
 
 M0_still.plot_elevation_time(MSG='PVAT')
+
+ # %% checking roll and pitch angle in office
+check_data(angecheck)
+
+# not working!!!!!!!!!!!!!!

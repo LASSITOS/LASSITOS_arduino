@@ -82,10 +82,10 @@ int PIN_Tx = 17; // 17 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define baudrateRS232 115200 
 
-#define Laser_fileBufferSize 1024 // Allocate 512Bytes of RAM for UART serial storage
+#define Laser_BufferSize 1024 // Allocate 512Bytes of RAM for UART serial storage
 #define flush_intervall 30000
 #define Laser_log_intervall 2000
-
+int bitsToWrite;
 
 
 // Setting for u-blox 
@@ -858,7 +858,6 @@ void readFiles( String rxValue){
 }
 
 
-
 // Get IMU data and send them over BLE+serial for manual check
 void  check_IMU(){  
    Send_tx_String(txString);
@@ -898,6 +897,38 @@ void  check_IMU(){
 }
 
 
+// Get attitude angles from IMU anf GPS coordinates and send them over BLE+serial for manual check
+void  check_attitude(){  
+   Send_tx_String(txString);
+   strcpy(txString,"");
+   if (!logging) {
+      myGNSS.getNAVPVAT();  // call for ESF-STATUS message 
+      delay(500);
+      
+      strcat(txString,"GNSS and IMU check \n# --------------------------------------\n");  
+      strcat(txString,"Roll angle: ");  
+      sprintf(subString,"%d",myGNSS.packetUBXNAVPVAT->data.vehRoll);  
+      strcat(txString,subString); 
+      strcat(txString,"\nPitch angle: ");  
+      sprintf(subString,"%d",myGNSS.packetUBXNAVPVAT->data.vehPitch);  
+      strcat(txString,subString); 
+      strcat(txString,"\nHeading angle: ");  
+      sprintf(subString,"%d",myGNSS.packetUBXNAVPVAT->data.vehHeading);  
+      strcat(txString,subString); 
+      strcat(txString,"\nLatitude: ");  
+      sprintf(subString,"%d",(myGNSS.packetUBXNAVPVAT->data.lat)* 0.0000001);  
+      strcat(txString,subString); 
+      strcat(txString,"\nLongitude: ");  
+      sprintf(subString,"%d",(myGNSS.packetUBXNAVPVAT->data.lon)* 0.0000001);  
+      strcat(txString,subString); 
+      strcat(txString,"\nElevation (m a.s.l.): ");  
+      sprintf(subString,"%d \n# --------------------------------------\n",(myGNSS.packetUBXNAVPVAT->data.hMSL)/1000);  
+      strcat(txString,subString); 
+  } else {
+    strcpy(txString,"Datalogging running. Can't run IMU _check now!");
+  }
+  Send_tx_String(txString);
+}
 
 
 
@@ -936,8 +967,10 @@ class MyCallbacks: public BLECharacteristicCallbacks {
            BLE_start=true;
         } else if (rxValue.find("STOP") != -1) {
            BLE_stop=true;
-		} else if (rxValue.find("CHECKIMU") != -1) {
-		    check_IMU();
+		    } else if (rxValue.find("CHECKIMU") != -1) {
+		       check_IMU();
+        } else if (rxValue.find("CHECKATT") != -1) {
+           check_attitude( );
         } else if (rxValue.find("RATE") != -1) {
            char passValue[40];
            for (int i = 0; i < rxValue.length(); i++){
@@ -1062,7 +1095,7 @@ void setup(){
     // Setup RS232 connection to Laser
     //--------------------
     RS232.begin(baudrateRS232,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
-    RS232.setRxBufferSize(Laser_fileBufferSize);
+    RS232.setRxBufferSize(Laser_BufferSize);
 
 
     // Setup GPS connection
@@ -1200,20 +1233,23 @@ void loop(){
     //  Laser data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if ( RS232.available() >= sdWriteSize) {   
+      bitsToWrite=RS232.available();
       Serial.println(",");
-      Serial.println(RS232.available());
-      Serial.println(millis());
+      Serial.println(bitsToWrite);
       dataFile.println(" ");
       dataFile.print("# iTOW ");
       dataFile.println(myGNSS.packetUBXNAVPVAT->data.iTOW);
-      while(RS232.available()){
-        dataFile.write(RS232.read());   
-      }
-      Serial.println(millis());
-      dataFile.println("# end ");
-      delay(20);STOP
+//      while(RS232.available()){
+//        dataFile.write(RS232.read());   
+//      }
+      RS232.readBytes(myBuffer, bitsToWrite);
+      dataFile.write( myBuffer, bitsToWrite);
+      dataFile.print("# end ");
+      dataFile.println(myGNSS.packetUBXNAVPVAT->data.iTOW);
     }
     logTime_laser  = millis();
+
+
 
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if (millis() > (lastPrint + 5000)) // Print bytesWritten once per 5 seconds
@@ -1285,6 +1321,8 @@ void loop(){
         setRate(rxValue);
       } else if (rxValue.indexOf("READ") != -1) {
         readFiles(rxValue);
+      } else if (rxValue.indexOf("CHECKATT") != -1) {
+        check_attitude( );
       }else{
         BLE_message=true;
         strcpy(txString,"Input can not be parsed retry!");
