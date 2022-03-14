@@ -26,6 +26,7 @@ long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox 
 long lastTime2 = 0; //Second simple local timer. 
 long lastTime_logstatus = 0; //Second simple local timer. 
 long logTime_laser;
+long start;
 
 #define statLED  13
 bool logging = true;
@@ -63,7 +64,7 @@ int PIN_Tx = 17; // 17 = Hardware TX pin,
 #define baudrateRS232 115200 
 #define Laser_fileBufferSize 512 // Allocate 512Bytes of RAM for UART serial storage
 #define logIntervall_laser 1000
-
+int bitsToWrite;
 
 
 void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
@@ -300,20 +301,23 @@ void setup(){
     Serial.print("Opened file for appending: ");
     Serial.println(dataFileName);
     }
-    
+    while(RS232.read() >= 0) ; // flush the receive buffer.
     logTime_laser  = millis(); // logTime_laser  
-
+    start  = millis(); // logTime_laser 
 }
 
 void loop(){
   if (logging){
-    //  Laser data
-    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    
+    while(RS232.available()){
+        Serial.write(RS232.read());   
+    }
+    if (millis()-logTime_laser > 2000){
+      Serial.print("Time: ");
+      Serial.println(millis());
+      logTime_laser=millis();
+    }
 
-//    if ( RS232.available() >= sdWriteSize) {   
-//      dataFile.print(RS232.read());   
-//      Serial.println(".");
-//    }
 //    if ( RS232.available() >= sdWriteSize) {   
 //      Serial.println(".");
 //      Serial.println(RS232.available());
@@ -324,54 +328,77 @@ void loop(){
 ////    }else if (RS232.available()){
 ////      Serial.println(RS232.available());
 //    }
-    
-    
-    if ( RS232.available() >= sdWriteSize) {   
-      
-      RS232.readBytes(myBuffer, sdWriteSize);
-//      Serial.println(",");
-      dataFile.write( myBuffer, sdWriteSize);   
-      Serial.println(".");
-    }
-//    if (logTime_laser +2000 < millis()){
-////      dataFile.print( F("test, ")); 
-//      Serial.println(".");
-//      logTime_laser = millis();
+//    if ( RS232.available() >= sdWriteSize) {   
+//      bites=RS232.available()
+//      Serial.print(", ");
+//      Serial.println(RS232.readBytes(myBuffer, sdWriteSize));
+//      Serial.print(".");
+//      Serial.println(dataFile.write( myBuffer, sdWriteSize))
 //    }
 
 
-  }
-    if (Serial.available()){ // Check Serial inputs
-      String rxValue = Serial.readString();
-      if (rxValue.length() > 0) {
-        Serial.println("*********");
-        Serial.print("Received Value: ");
-        for (int i = 0; i < rxValue.length(); i++)
-          Serial.print(rxValue[i]);
-        Serial.println();
-  
-        //Start new data files if START is received and stop current data files if STOP is received
-        if  (rxValue.indexOf("STOP") != -1)  {
-           
-            if(dataFile){
-              Serial.println("Closing datafile:");
-              Serial.println(dataFileName);
-              delay(500);
-              dataFile.close(); // Close the data file
-              Serial.println("Datafile closed.");
-              listDir(SD, "/", 0);
-              readFile(SD,dataFileName);
-            }
-            logging = false;
-        }
-        Serial.println("*********");
-      }
-    }
 
-    if (lastTime_logstatus  +10000 < millis()){
-      dataFile.flush();
-      lastTime_logstatus  = millis();
+//  Laser data
+    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+//    if ( RS232.available() >= sdWriteSize and (millis()-logTime_laser) > 1000) {   
+//      bitsToWrite=RS232.available();
+//      Serial.println(",");
+//      Serial.println(bitsToWrite);
+//      Serial.println(millis()-start);
+//      dataFile.println(" ");
+//      dataFile.print("# iTOW ");
+//      dataFile.println(millis()-start);
+////      while(RS232.available()){
+////        dataFile.write(RS232.read());   
+////      }
+//      Serial.print(", ");
+//      Serial.println(RS232.readBytes(myBuffer, bitsToWrite));
+//      Serial.print(".");
+//      Serial.println(dataFile.write( myBuffer, bitsToWrite));
+//
+//      Serial.println(millis()-start);
+//      dataFile.print("# end ");
+//      dataFile.println(millis()-start);
+////      delay(20);
+//      logTime_laser  = millis();
+//    }
+
+    
+  }
+
+  
+  if (Serial.available()){ // Check Serial inputs
+    String rxValue = Serial.readString();
+    if (rxValue.length() > 0) {
+      Serial.println("*********");
+      Serial.print("Received Value: ");
+      for (int i = 0; i < rxValue.length(); i++)
+        Serial.print(rxValue[i]);
+      Serial.println();
+
+      //Start new data files if START is received and stop current data files if STOP is received
+      if  (rxValue.indexOf("STOP") != -1)  {
+         
+          if(dataFile){
+            Serial.println("Closing datafile:");
+            Serial.println(dataFileName);
+            delay(500);
+            dataFile.close(); // Close the data file
+            Serial.println("Datafile closed.");
+            listDir(SD, "/", 0);
+            readFile(SD,dataFileName);
+          }
+          logging = false;
+      }
+      Serial.println("*********");
     }
-  delay(50);
-//    Serial.print("waited 50 ms");
+  }
+
+  if (lastTime_logstatus  +10000 < millis()){
+    dataFile.flush();
+    lastTime_logstatus  = millis();
+    Serial.println("Flushed");
+  }
+  delay(10);
+
 }

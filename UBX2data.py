@@ -54,7 +54,12 @@ class MSG_type:
                             
                             except Exception as e: 
                                 print(e)
+
                 
+class Laser:
+    def __init__(self,path,rate=5):
+        self.iTOW,self.h,self.signQ,self.T,self.iTOW2=read_Laser(path,rate=rate)
+               
 
 class UBX2data:
     
@@ -62,7 +67,7 @@ class UBX2data:
     MSG_id_list=['NAV-PVT','NAV-ATT','ESF-MEAS','ESF-INS','ESF-ALG','ESF-STATUS','NAV-PVAT']
     extr_list=['ATT','PVT','INS','PVAT']
     
-    def __init__(self,filepath,name=''):
+    def __init__(self,filepath,name='',Laserrate=5):
         """
         
         """
@@ -70,6 +75,8 @@ class UBX2data:
             self.name=name
         else:
              self.name=filepath.split('\\')[-1]   
+        
+        self.Laserrate=Laserrate
         
         stream = open(filepath, 'rb')
         ubr = UBXReader(stream, ubxonly=False, validate=0)
@@ -102,6 +109,9 @@ class UBX2data:
         
         self.extract()
         
+        if self.Laserrate>0:
+            self.Laser=Laser(filepath,rate=self.Laserrate)
+        
                 
     def extract(self):
         for msg in self.extr_list:
@@ -129,7 +139,44 @@ class UBX2data:
 
 # %% #########function definitions #############
 
-
+def read_Laser(path,rate=5):
+    """
+    path: file path
+    rate: data reate of Laser in Hz
+    
+    return  time of week (ms), height, signal quality, temperature 
+    
+    """
+    
+    file=open(path,mode='rt',errors='ignore')
+    
+    h=[]
+    T=[]
+    signQ=[]
+    iTOW=[]
+    iTOW2=[]
+    i=0
+    j=0
+    t=0
+    for l in file:
+        if l[0]=='D':
+            a=l.split()
+            h.append(float(a[1]))
+            signQ.append(float(a[2]))
+            T.append(float(a[3])  )
+            iTOW.append(0) 
+            iTOW2.append(i*1000/rate)
+            i+=1
+            j+=1
+        elif l[:6]=='# iTOW':
+            t=float(l.split()[2])
+            # print(t)
+        elif l[:5]=='# end':
+            for k in range(1,j+1):
+                 iTOW[-k]=t-(k-1)*1000/rate
+            j=0
+    return np.array(iTOW),np.array(h),np.array(signQ),np.array(T),np.array(iTOW2)+iTOW[0]
+    
     
 def check_data(data):
     """
@@ -174,7 +221,27 @@ def check_data(data):
         print('no attitude messages found')
         
 
-
+    try:
+        if len(data.Laser.h)==0:
+            raise AttributeError
+                
+        pl.figure()
+        ax=pl.subplot(111)
+        ax2=ax.twinx()
+        ax.set_ylabel('Laser h (mm)')
+        ax2.set_ylabel('GNSS Delta_h (mm)')
+        ax.set_xlabel('time (ms)')
+    
+        ax.plot(data.Laser.iTOW-data.PVAT.iTOW[0],data.Laser.h,'--xk',label='Laser, time1')
+        ax.plot(data.Laser.iTOW2-data.PVAT.iTOW[0],data.Laser.h,'--ob',label='Laser, time2')
+        ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0]),data.PVAT.height-(data.PVAT.height[0]-data.Laser.h[0]),'o:r',label='GPS height')
+        
+        lines, labels = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines + lines2, labels + labels2, loc=0)   
+        pl.title(data.name)
+    except AttributeError:
+        print('No laser data found')
 
 
 
@@ -225,7 +292,7 @@ def plot_elevation_time(data,MSG='PVT',ax=[],title=[]):
     d=getattr(data,MSG)
 
     
-    ax.plot((d.iTOW-d.iTOW[0])/1000,d.height/1000,'o-r',label='pitch')
+    ax.plot((d.iTOW-d.iTOW[0])/1000,d.height/1000,'o-r',label='height')
     ax.set_ylabel('elevation (m a.s.l.)')
     ax.set_xlabel('time (s)')
    

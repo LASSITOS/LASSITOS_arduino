@@ -26,8 +26,17 @@ from UBX2data import *
 
 
 filepath=r'C:\Users\AcCap\GNSS_arduino\data_examples\GNSS_laser'
-data=UBX2data(filepath+r'\a000101_0131.ubx',name='rate=5Hz')
 
-# check_data(data)
+#rate=1
+rate1=UBX2data(filepath+r'\a000101_1259.ubx',name='rate=1Hz')
+rate5=UBX2data(filepath+r'\a000101_2153.ubx',name='rate=5Hz')
+rate10=UBX2data(filepath+r'\a000101_1240.ubx',name='rate=10Hz')
+# rate15=UBX2data(filepath+r'\a000101_1111.ubx',name='rate=15Hz')
+rate20=UBX2data(filepath+r'\a000101_0852.ubx',name='rate=20Hz')
 
+
+check_data(rate1)
+check_data(rate5)
+check_data(rate10)
+check_data(rate20)
 

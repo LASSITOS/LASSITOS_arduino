@@ -678,13 +678,18 @@ void restart_logging() {
   delay(500);
   logging = true;
   setupGNSS();
-  myGNSS.clearFileBuffer();
+  myGNSS.clearFileBuffer();  // flush the receive buffer.
+  while(RS232.read() >= 0) ; // flush the receive buffer.
+  lastPrint = millis(); // Initialize lastPrint
+  logTime_laser  = millis(); // logTime_laser
   
   //call for GPS status messages
   if (log_STATUS ){   
     myGNSS.getESFSTATUS();
     myGNSS.getESFALG();
   }
+
+  
 }
 
 
@@ -1172,7 +1177,7 @@ void loop(){
     //  GNSS data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     myGNSS.checkUblox(); // Check for the arrival of new data and process it.
-    while (myGNSS.fileBufferAvailable() >= sdWriteSize and (millis()-logTime_laser < Laser_log_intervall) ) // Check to see if we have at least sdWriteSize waiting in the buffer
+    while (myGNSS.fileBufferAvailable() >= sdWriteSize and ((millis()-logTime_laser) < Laser_log_intervall) ) // Check to see if we have at least sdWriteSize waiting in the buffer
     {
       digitalWrite(LED_BUILTIN, HIGH); // Flash LED_BUILTIN each time we write to the SD card
 
@@ -1206,7 +1211,7 @@ void loop(){
       }
       Serial.println(millis());
       dataFile.println("# end ");
-      delay(20);
+      delay(20);STOP
     }
     logTime_laser  = millis();
 
