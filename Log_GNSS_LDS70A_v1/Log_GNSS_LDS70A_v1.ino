@@ -63,8 +63,11 @@ int statLED = 13;
 #define CD_pin 27         // chip detect pin is shorted to GND if a card is inserted. (Otherwise pulled up by 10kOhm)
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-#define sdWriteSize 256 // Write data to the SD card in blocks of 512 bytes
-uint8_t *myBuffer; // A buffer to hold the data while we write it to SD car
+#define sdWriteSize 512 // Write data to the SD card in blocks of 512 bytes
+#define sdWriteSize_Laser 500 // Write data to the SD card in blocks of almost 512 bytes
+uint8_t *myBuffer; // A buffer to hold the GNSS data while we write it to SD car
+uint8_t *myBuffer_laser; // A buffer to hold the Laser data while we write it to SD car
+
 SPIClass spi = SPIClass(VSPI);
 
 char headerFileName[24]; //Max file name length is 23 characters)
@@ -902,9 +905,9 @@ void  check_attitude(){
    Send_tx_String(txString);
    strcpy(txString,"");
    if (!logging) {
-      myGNSS.getNAVPVAT();  // call for ESF-STATUS message 
+      myGNSS.getNAVPVAT();  // call for NAVPVAT message 
       delay(500);
-      
+//      Serial.println("got PVAT");
       strcat(txString,"GNSS and IMU check \n# --------------------------------------\n");  
       strcat(txString,"Roll angle: ");  
       sprintf(subString,"%d",myGNSS.packetUBXNAVPVAT->data.vehRoll);  
@@ -914,6 +917,7 @@ void  check_attitude(){
       strcat(txString,subString); 
       strcat(txString,"\nHeading angle: ");  
       sprintf(subString,"%d",myGNSS.packetUBXNAVPVAT->data.vehHeading);  
+//      Serial.println("ATT saved");
       strcat(txString,subString); 
       strcat(txString,"\nLatitude: ");  
       sprintf(subString,"%d",(myGNSS.packetUBXNAVPVAT->data.lat)* 0.0000001);  
@@ -922,8 +926,10 @@ void  check_attitude(){
       sprintf(subString,"%d",(myGNSS.packetUBXNAVPVAT->data.lon)* 0.0000001);  
       strcat(txString,subString); 
       strcat(txString,"\nElevation (m a.s.l.): ");  
-      sprintf(subString,"%d \n# --------------------------------------\n",(myGNSS.packetUBXNAVPVAT->data.hMSL)/1000);  
+      sprintf(subString,"%d",(myGNSS.packetUBXNAVPVAT->data.hMSL)/1000);  
       strcat(txString,subString); 
+      strcat(txString," \n# --------------------------------------\n"); 
+//      Serial.println("GNSS saved");
   } else {
     strcpy(txString,"Datalogging running. Can't run IMU _check now!");
   }
@@ -1129,7 +1135,7 @@ void setup(){
 
     // Setup SD connection
     //--------------------
-    
+    myBuffer_laser = new uint8_t[sdWriteSize_Laser*3]; // Create our own buffer to hold the data while we write it to SD card
     
     Serial.print("CD pin value:");
     Serial.println(digitalRead(CD_pin));
@@ -1232,20 +1238,28 @@ void loop(){
 
     //  Laser data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if ( RS232.available() >= sdWriteSize) {   
+    if ( RS232.available() >= sdWriteSize_Laser) {   
       bitsToWrite=RS232.available();
+      if (bitsToWrite>sdWriteSize_Laser*2) {
+        bitsToWrite=sdWriteSize_Laser*2;
+        Serial.println("More bits than Writesize");
+      }
       Serial.println(",");
       Serial.println(bitsToWrite);
       dataFile.println(" ");
       dataFile.print("# iTOW ");
       dataFile.println(myGNSS.packetUBXNAVPVAT->data.iTOW);
+      Serial.println("Got time");
 //      while(RS232.available()){
 //        dataFile.write(RS232.read());   
 //      }
-      RS232.readBytes(myBuffer, bitsToWrite);
-      dataFile.write( myBuffer, bitsToWrite);
+      RS232.readBytes(myBuffer_laser, bitsToWrite);
+      Serial.println("Got data");
+      dataFile.write( myBuffer_laser, bitsToWrite);
+      Serial.println("wrote data");
       dataFile.print("# end ");
       dataFile.println(myGNSS.packetUBXNAVPVAT->data.iTOW);
+      Serial.println("end");
     }
     logTime_laser  = millis();
 
@@ -1255,6 +1269,11 @@ void loop(){
     if (millis() > (lastPrint + 5000)) // Print bytesWritten once per 5 seconds
     {
       Serial.println(" ");
+      Serial.println(RS232.available());
+      if ((millis()-logTime_laser) > 5*Laser_log_intervall) {
+         while(RS232.read() >= 0);
+    }
+      
       BLE_message=true;
       strcpy(txString,".");
       lastPrint = millis(); // Update lastPrint

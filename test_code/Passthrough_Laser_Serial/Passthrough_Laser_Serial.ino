@@ -50,7 +50,7 @@ void setup() {
 void loop() {
   if (Serial.available()) {      // If anything comes in Serial (USB),
      RS232.write(Serial.read());   // read it and send it out Serial1 (pins 0 & 1)
-     Serial.println("Got data from Serial ");
+//     Serial.println("Got data from Serial ");
      }
 
   if ( RS232.available()) {     // If anything comes in Serial1 (pins 0 & 1)
@@ -68,7 +68,8 @@ void loop() {
   if ( (millis() - lastTime > 10000)){   
     lastTime = millis(); //Update the timer
     Serial.println("5 s are passed. ");
+    
   }
 
-  
+  delay(50);
 }

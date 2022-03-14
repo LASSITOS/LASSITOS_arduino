@@ -243,7 +243,7 @@ void setup(){
     RS232.begin(baudrateRS232,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
     RS232.setRxBufferSize(Laser_fileBufferSize);
 
-    myBuffer = new uint8_t[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
+    myBuffer = new uint8_t[sdWriteSize*4]; // Create our own buffer to hold the data while we write it to SD card
     
     Serial.print("CD pin value:");
     Serial.println(digitalRead(CD_pin));
@@ -308,15 +308,38 @@ void setup(){
 
 void loop(){
   if (logging){
+    //  Laser data
+    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    if ( RS232.available() >= sdWriteSize and (millis()-logTime_laser) > 1000) {   
+      bitsToWrite=RS232.available();
+      Serial.println(",");
+      Serial.println(bitsToWrite);
+      Serial.println(millis()-start);
+      dataFile.println(" ");
+      dataFile.print("# iTOW ");
+      dataFile.println(millis()-start);
+      Serial.print(", ");
+      Serial.println(RS232.readBytes(myBuffer, bitsToWrite));
+      Serial.print(".");
+      Serial.println(dataFile.write( myBuffer, bitsToWrite));
+
+      Serial.println(millis()-start);
+      dataFile.print("# end ");
+      dataFile.println(millis()-start);
+//      delay(20);
+      logTime_laser  = millis();
+      delay(25);
+    }
+
     
-    while(RS232.available()){
-        Serial.write(RS232.read());   
-    }
-    if (millis()-logTime_laser > 2000){
-      Serial.print("Time: ");
-      Serial.println(millis());
-      logTime_laser=millis();
-    }
+//    while(RS232.available()){
+//        Serial.write(RS232.read());   
+//    }
+//    if (millis()-logTime_laser > 2000){
+//      Serial.print("Time: ");
+//      Serial.println(millis());
+//      logTime_laser=millis();
+//    }
 
 //    if ( RS232.available() >= sdWriteSize) {   
 //      Serial.println(".");
@@ -335,35 +358,7 @@ void loop(){
 //      Serial.print(".");
 //      Serial.println(dataFile.write( myBuffer, sdWriteSize))
 //    }
-
-
-
-//  Laser data
-    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-//    if ( RS232.available() >= sdWriteSize and (millis()-logTime_laser) > 1000) {   
-//      bitsToWrite=RS232.available();
-//      Serial.println(",");
-//      Serial.println(bitsToWrite);
-//      Serial.println(millis()-start);
-//      dataFile.println(" ");
-//      dataFile.print("# iTOW ");
-//      dataFile.println(millis()-start);
-////      while(RS232.available()){
-////        dataFile.write(RS232.read());   
-////      }
-//      Serial.print(", ");
-//      Serial.println(RS232.readBytes(myBuffer, bitsToWrite));
-//      Serial.print(".");
-//      Serial.println(dataFile.write( myBuffer, bitsToWrite));
-//
-//      Serial.println(millis()-start);
-//      dataFile.print("# end ");
-//      dataFile.println(millis()-start);
-////      delay(20);
-//      logTime_laser  = millis();
-//    }
-
-    
+   
   }
 
   
@@ -398,7 +393,8 @@ void loop(){
     dataFile.flush();
     lastTime_logstatus  = millis();
     Serial.println("Flushed");
+    if (logging) {Serial.println("logging");}
   }
-  delay(10);
+  delay(25);
 
 }
