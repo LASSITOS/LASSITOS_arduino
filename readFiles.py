@@ -20,12 +20,17 @@ def read_file(file,path='',printcontent=False,com='COM8',baud=115200):
         r=False
         sweep=True
         
-        if path !='':
-            if not os.path.isdir(path):
-                os.makedirs(path)
-        
-        f = open(path+r'/'+file,'wb')
-        
+        try:
+            if path !='':
+                if not os.path.isdir(path):
+                    os.makedirs(path)
+            
+            f = open(path+r'/'+file,'wb')
+        except Exception as e: 
+            print('File can not be created. Choose an other path. ')
+            print(e)
+            ser.close()
+            return
         
         bitstring=b'READ:/'+file.encode()+b':'
         ser.write(bitstring) 
