@@ -43,13 +43,13 @@ SFE_UBLOX_GNSS myGNSS;
 #include <HardwareSerial.h>
 HardwareSerial RS232(2);
 
-#define version "v1.0"
+#define version "GNSS+Altimeter v1.1"
 
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 long lastTime2 = 0; //Second simple local timer. 
 long lastTime_logstatus = 0; //Second simple local timer. 
 long logTime_laser;
-
+long logTime_laser2;
 
 int statLED = 13;
 
@@ -88,7 +88,7 @@ int PIN_Tx = 17; // 17 = Hardware TX pin,
 #define Laser_BufferSize 1024 // Allocate 512Bytes of RAM for UART serial storage
 #define flush_intervall 30000
 #define Laser_log_intervall 2000
-int bitsToWrite;
+int bitesToWrite;
 
 
 // Setting for u-blox 
@@ -96,7 +96,7 @@ int bitsToWrite;
 bool logging = false;
 
 bool IMUcalibration=false;
-int NavigationFrequency = 1;
+int NavigationFrequency = 5;
 dynModel DynamicModel = (dynModel)4;
 bool log_RMX = false;
 bool log_ESFRAW  = false;
@@ -276,7 +276,7 @@ void removeDir(fs::FS &fs, const char * path){
 }
 
 void readFile(fs::FS &fs, const char * path){
-    Serial.printf("Reading file: %s\n", path);
+    Serial.printf("## Reading file: %s\n", path);
 
     File file = fs.open(path);
     if(!file){
@@ -284,7 +284,7 @@ void readFile(fs::FS &fs, const char * path){
         return;
     }
 
-    Serial.println("Read from file: ");
+//    Serial.println("Read from file: ");
     while(file.available()){
         Serial.write(file.read());
     }
@@ -400,13 +400,13 @@ void  log_settings() {
   headerFile.print(F("DynamicModel: "));
   headerFile.println(DynamicModel);
   headerFile.print(F("log_NAVATT: "));
-  headerFile.println(log_ESFALG);
+  headerFile.println(log_NAVATT);
   headerFile.print(F("log_NAVPVT: "));
-  headerFile.println(log_ESFALG);
+  headerFile.println(log_NAVPVT);
   headerFile.print(F("log_NAVPVAT: "));
-  headerFile.println(log_ESFALG);
+  headerFile.println(log_NAVPVAT);
   headerFile.print(F("log_ESFINS: "));
-  headerFile.println(log_ESFALG);
+  headerFile.println(log_ESFINS);
   headerFile.print(F("log_ESFRAW: "));
   headerFile.println(log_ESFRAW);
   headerFile.print(F("log_ESFMEAS: "));
@@ -489,8 +489,10 @@ void  makeFiles(fs::FS &fs) {
     Serial.println(dataFileName);
     while (1);
   }
-  Serial.print("Created file: ");
-  Serial.println(dataFileName);
+  strcpy(txString,"");
+  strcat(txString,"Created file: ");
+  strcat(txString,dataFileName);  
+  Send_tx_String(txString);
   LED_blink(100,10);
 }
 
@@ -515,12 +517,7 @@ void  Write_stop() {
 
 // setting up GPS 
 void setupGNSS(){ 
-    Serial.println(F("setting up GPS for automatic messages"));
-    myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
-      
-    myGNSS.setDynamicModel(DynamicModel);
-    myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
-      
+          
     if (log_NAVPVT) {
       // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
       myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
@@ -591,9 +588,9 @@ void stop_logging(fs::FS &fs) {
 	if (log_NAVPVT) {
 	  myGNSS.setAutoPVT(false, false); // Enable automatic NAV PVT messages without callback to printPVTdata
 	  }
-	if (log_NAVPVAT) {
-	  myGNSS.setAutoNAVPVAT(false, false); // Enable automatic NAV PVT messages without callback to printPVTdata
-	}
+//	if (log_NAVPVAT) {
+//	  myGNSS.setAutoNAVPVAT(false, false); // Enable automatic NAV PVT messages without callback to printPVTdata
+//	}
 	if (log_NAVATT) {
 	  myGNSS.setAutoNAVATT(false, false); 
 	}
@@ -829,24 +826,28 @@ void readFiles( String rxValue){
     Read last files (haderfile and datafile) if no argument is passed  ("READ" ) otherwise read passed files (READ:<<filepath>>:).
     */
    if (!logging) {
+//    Serial.println(rxValue);
     int index = rxValue.indexOf(":");\
     int index2 = rxValue.indexOf(":",index+1);
-    if (index =-1){
+//    Serial.println(index );
+//    Serial.println(index2);
+    
+    if (index !=-1 and index2 !=-1){
+      char path[32];
+      rxValue.substring(index+1,index2).toCharArray(path,32);
+      Serial.println("");
+//      Serial.print("%% Reading file:");
+//      Serial.println(path);
+      readFile(SD,path);
+      Serial.println(" \n## End of file");
+      
+    } else if (index =-1){
       Serial.print("Reading file:");
       Serial.println(headerFileName);
       readFile(SD,headerFileName);
       Serial.print("Reading file:");
       Serial.println(dataFileName);
       readFile(SD,dataFileName);
-      
-    } else if (index !=-1 and index2 !=-1){
-
-      char path[32];
-      rxValue.substring(index+1,index2).toCharArray(path,32);
-      
-      Serial.print("Reading file:");
-      Serial.println(path);
-      readFile(SD,path);
       
     } else {
       BLE_message=true;
@@ -855,8 +856,23 @@ void readFiles( String rxValue){
     }
   } else {
     BLE_message=true;
-    strcpy(txString,"Datalogging running. Can't change dynamic navigation plattform now. First stop measurment!");
+    strcpy(txString,"Datalogging running. Can't files now. First stop measurment!");
     Serial.println(txString);
+  }
+}
+
+void getFileList(){  
+    /*
+    Return list of files in SD card
+    */
+   if (!logging) {
+    Serial.println("");
+    Serial.println("%% File list:");
+    listDir(SD, "/", 0);
+    Serial.println("%% end"); 
+      
+  } else {
+    Serial.println("Datalogging running. Can't read file list now. First stop measurment!");
   }
 }
 
@@ -909,24 +925,24 @@ void  check_attitude(){
       delay(500);
 //      Serial.println("got PVAT");
       strcat(txString,"GNSS and IMU check \n# --------------------------------------\n");  
-      strcat(txString,"Roll angle: ");  
-      sprintf(subString,"%d",myGNSS.packetUBXNAVPVAT->data.vehRoll);  
+      strcat(txString,"Roll angle (deg): "); 
+      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.vehRoll)/100000);  
       strcat(txString,subString); 
-      strcat(txString,"\nPitch angle: ");  
-      sprintf(subString,"%d",myGNSS.packetUBXNAVPVAT->data.vehPitch);  
+      strcat(txString,"\nPitch angle (deg): ");  
+      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.vehPitch)/100000);  
       strcat(txString,subString); 
-      strcat(txString,"\nHeading angle: ");  
-      sprintf(subString,"%d",myGNSS.packetUBXNAVPVAT->data.vehHeading);  
+      strcat(txString,"\nHeading angle (deg): ");  
+      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.vehHeading)/100000);  
 //      Serial.println("ATT saved");
       strcat(txString,subString); 
-      strcat(txString,"\nLatitude: ");  
-      sprintf(subString,"%d",(myGNSS.packetUBXNAVPVAT->data.lat)* 0.0000001);  
+      strcat(txString,"\nLatitude (deg): ");  
+      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.lat)/10000000);  
       strcat(txString,subString); 
-      strcat(txString,"\nLongitude: ");  
-      sprintf(subString,"%d",(myGNSS.packetUBXNAVPVAT->data.lon)* 0.0000001);  
+      strcat(txString,"\nLongitude (deg): ");
+      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.lon)/10000000);  
       strcat(txString,subString); 
       strcat(txString,"\nElevation (m a.s.l.): ");  
-      sprintf(subString,"%d",(myGNSS.packetUBXNAVPVAT->data.hMSL)/1000);  
+      sprintf(subString,"%.2f",(float)(myGNSS.packetUBXNAVPVAT->data.hMSL)/1000);  
       strcat(txString,subString); 
       strcat(txString," \n# --------------------------------------\n"); 
 //      Serial.println("GNSS saved");
@@ -937,7 +953,32 @@ void  check_attitude(){
 }
 
 
-
+// Get Laser data for 1 second and send it over BLE and serial
+void  check_laser(){  
+   Send_tx_String(txString);
+   strcpy(txString,"");
+   if (!logging) {
+      strcat(txString,"\nLaser data \n# --------------------------------------\n");  
+      Send_tx_String(txString);
+      lastTime=millis();
+      while(RS232.read() >= 0) ; // flush the receive buffer.
+      while(millis()-lastTime < 1000);
+      int availableBytes = RS232.available();
+      RS232.readBytes(myBuffer_laser, availableBytes);
+      Serial.write( myBuffer_laser, availableBytes);
+      if (deviceConnected) {
+        pTxCharacteristic->setValue(myBuffer_laser, availableBytes);
+        pTxCharacteristic->notify();
+        BLE_message=false;
+      }
+      strcpy(txString,"");
+      strcat(txString,"# --------------------------------------\n");  
+      Send_tx_String(txString);
+  } else {
+    strcpy(txString,"Datalogging running. Can't run IMU _check now!");
+  }
+  Send_tx_String(txString);
+}
 
 
 
@@ -977,6 +1018,9 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 		       check_IMU();
         } else if (rxValue.find("CHECKATT") != -1) {
            check_attitude( );
+           check_laser();
+        } else if (rxValue.find("CHECKLASER") != -1) {
+           check_laser();
         } else if (rxValue.find("RATE") != -1) {
            char passValue[40];
            for (int i = 0; i < rxValue.length(); i++){
@@ -1082,10 +1126,6 @@ void setup_BLE() {
 
 
 
-
-
-
-
 // /////////////////////////////////////////////
 // -%--------------------------------------------
 // Setup and loop
@@ -1125,10 +1165,13 @@ void setup(){
     }
     
     myGNSS.setI2COutput(COM_TYPE_UBX); //Set the I2C port to output UBX only (turn off NMEA noise)
+    myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
+    myGNSS.setDynamicModel(DynamicModel);  
+    myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
     Serial.println(F("Connection to GPS succesful"));
 
 
-    // Setup GPS connection
+    // Setup BLE connection
     //--------------------
     setup_BLE();
 
@@ -1239,27 +1282,28 @@ void loop(){
     //  Laser data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if ( RS232.available() >= sdWriteSize_Laser) {   
-      bitsToWrite=RS232.available();
-      if (bitsToWrite>sdWriteSize_Laser*2) {
-        bitsToWrite=sdWriteSize_Laser*2;
+      bitesToWrite=RS232.available();
+      if (bitesToWrite>sdWriteSize_Laser*2) {
+        bitesToWrite=sdWriteSize_Laser*2;
         Serial.println("More bits than Writesize");
       }
       Serial.println(",");
-      Serial.println(bitsToWrite);
+      Serial.println(bitesToWrite);
       dataFile.println(" ");
       dataFile.print("# iTOW ");
       dataFile.println(myGNSS.packetUBXNAVPVAT->data.iTOW);
-      Serial.println("Got time");
+//      Serial.println("Got time");
 //      while(RS232.available()){
 //        dataFile.write(RS232.read());   
 //      }
-      RS232.readBytes(myBuffer_laser, bitsToWrite);
-      Serial.println("Got data");
-      dataFile.write( myBuffer_laser, bitsToWrite);
-      Serial.println("wrote data");
+      RS232.readBytes(myBuffer_laser, bitesToWrite);
+//      Serial.println("Got data");
+      dataFile.write( myBuffer_laser, bitesToWrite);
+//      Serial.println("wrote data");
       dataFile.print("# end ");
       dataFile.println(myGNSS.packetUBXNAVPVAT->data.iTOW);
-      Serial.println("end");
+//      Serial.println("end");
+      logTime_laser2  = millis();
     }
     logTime_laser  = millis();
 
@@ -1270,10 +1314,9 @@ void loop(){
     {
       Serial.println(" ");
       Serial.println(RS232.available());
-      if ((millis()-logTime_laser) > 5*Laser_log_intervall) {
+      if ((millis()-logTime_laser2) > 5*Laser_log_intervall) {  //Flush RS232 buffer if data were are not read for too long.
          while(RS232.read() >= 0);
-    }
-      
+      }
       BLE_message=true;
       strcpy(txString,".");
       lastPrint = millis(); // Update lastPrint
@@ -1340,8 +1383,12 @@ void loop(){
         setRate(rxValue);
       } else if (rxValue.indexOf("READ") != -1) {
         readFiles(rxValue);
+      } else if (rxValue.indexOf("LIST") != -1) {
+        getFileList();
       } else if (rxValue.indexOf("CHECKATT") != -1) {
         check_attitude( );
+      } else if (rxValue.indexOf("CHECKLASER") != -1) {
+        check_laser();
       }else{
         BLE_message=true;
         strcpy(txString,"Input can not be parsed retry!");
@@ -1349,7 +1396,6 @@ void loop(){
       }
       Serial.println("*********");
       }
-    
   }  
   
     //Check fusion mode
@@ -1364,7 +1410,6 @@ void loop(){
 	myGNSS.getESFALG();
     lastTime_logstatus = millis(); //Update the timer
   }
-
 
   delay(5);
 }

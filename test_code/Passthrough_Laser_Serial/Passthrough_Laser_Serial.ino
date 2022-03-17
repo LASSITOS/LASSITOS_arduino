@@ -65,11 +65,12 @@ void loop() {
 //      Serial.println(".");
 //    }
     
-  if ( (millis() - lastTime > 10000)){   
-    lastTime = millis(); //Update the timer
-    Serial.println("5 s are passed. ");
-    
-  }
+//  if ( (millis() - lastTime > 10000)){   
+//    lastTime = millis(); //Update the timer
+//    Serial.println("10 s are passed. ");
+//    SA
 
-  delay(50);
+//  }
+
+  delay(5);
 }

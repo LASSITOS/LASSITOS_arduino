@@ -40,3 +40,7 @@ check_data(rate5)
 check_data(rate10)
 check_data(rate20)
 
+
+# %% 
+rate5=UBX2data(filepath+r'\a220315_0446.ubx')
+check_data(rate5)

@@ -15,7 +15,7 @@ from pyubx2 import UBXReader
 
 sys.path.append(r'C:\Users\Laktop\GNSS_arduino')
 sys.path.append(r'C:\Users\AcCap\GNSS_arduino')
-from UBXdata import *
+from UBXdata2 import *
 
 # PC_loc=filepath=r'C:\Users\AcCap'
 PC_loc=filepath=r'C:\Users\Laktop'
@@ -139,3 +139,30 @@ M0_still.plot_elevation_time(MSG='PVAT')
 check_data(angecheck)
 
 # not working!!!!!!!!!!!!!!
+
+
+# %% test IMU calibration 14.03.2022
+#------------------------------------
+filepath=PC_loc+r'\GNSS_arduino\data_examples\test_IMU'
+
+""""
+Short tube with PVAT and OpenLog
+1. Drive on parking lot rate =1 
+2. Drive on parking lot rate =5
+""" 
+
+# GI-Freds
+M4_rate1=UBXdata(filepath+r'\a220315_0137.ubx')
+
+# Car ride Fred-Home Run
+M4_rate5=UBXdata(filepath+r'\a220315_0134.ubx')
+
+
+check_data(M4_rate5)
+check_data(M4_rate1)
+
+M4_rate5.plot_mapOSM(z='height',MSG='PVAT')
+M4_rate5.plot_mapOSM(z='iTOW',MSG='PVAT')
+
+M4_rate1.plot_mapOSM(z='height',MSG='PVAT')
+M4_rate1.plot_mapOSM(z='iTOW',MSG='PVAT')

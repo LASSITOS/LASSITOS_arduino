@@ -3,4 +3,4 @@ data_examples/*
 !data_examples/test_IMU/
 !data_examples/GNSS_laser/
 __pycache__/
-
+.pylint.d/
