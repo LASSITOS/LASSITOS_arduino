@@ -28,13 +28,13 @@ class MSG_type:
         self.parsed=[]
         
     def extract(self):
-        l=len(self.parsed)
+        self.len=len(self.parsed)
         # print(l)
-        if l>0:
+        if self.len>0:
             for attr in self.parsed[0].__dict__.keys():
                 
                 if attr!='_':
-                    setattr(self,attr,np.zeros(l,dtype=type(getattr(self.parsed[0],attr))))
+                    setattr(self,attr,np.zeros(self.len,dtype=type(getattr(self.parsed[0],attr))))
         
             for i,p in enumerate(self.parsed):
                 for attr in p.__dict__.keys():
@@ -67,9 +67,17 @@ class UBX2data:
     MSG_id_list=['NAV-PVT','NAV-ATT','ESF-MEAS','ESF-INS','ESF-ALG','ESF-STATUS','NAV-PVAT']
     extr_list=['ATT','PVT','INS','PVAT']
     
-    def __init__(self,filepath,name='',Laserrate=5):
+    def __init__(self,filepath,name='',Laserrate=5,clean=True,load=True):
         """
+            Read GNSS and Laser data from .ubx data file. Additional methods are available for plotting and handling data.    
         
+            Inputs:
+            ---------------------------------------------------    
+            path:           file path
+            Laserrate:      data reate of Laser in Hz. If  Laserrate=0, do not load Laserdata.
+            clean:          Separate GNSS and Laser data to different files. Default: clean=True
+                            Used to restore GNSS data wich might be brocken by Laser data.
+                            If 'force', force recleanig of data even if clean files are present.
         """
         if name!='': 
             self.name=name
@@ -78,40 +86,65 @@ class UBX2data:
         
         self.Laserrate=Laserrate
         
-        stream = open(filepath, 'rb')
-        ubr = UBXReader(stream, ubxonly=False, validate=0)
         
-        for msg in self.MSG_list:
-            setattr(self,msg,MSG_type() )
         
-        i=0
-        self.corrupt=[]
-        self.other=[]
-        
-        for (raw_data, parsed_data) in ubr: 
-            # print(raw_data)
-            i+=1
-            # print(parsed_data)
-            try:
+        if load:
+            if not os.path.isfile(filepath) :
+                print("File not found!!!")
+                raise FileNotFoundError()
+            self.file_original=filepath    
+            
+            if (clean=='force' or (clean==True and (not os.path.isfile(filepath[:-4]+'_GNSS.ubx') or not os.path.isfile(filepath[:-4]+'_Laser.dat') ))):
+                cleanFromLaser(filepath)
+                filepath=self.file_original[:-4]+'_GNSS.ubx'
+                filelaser=self.file_original[:-4]+'_Laser.dat'
+            if clean:
+                if (not os.path.isfile(filepath[:-4]+'_GNSS.ubx') or not os.path.isfile(filepath[:-4]+'_Laser.dat') ):
+                    cleanFromLaser(filepath)
+                    print('Cleaned .ubs file!')
+                filepath=self.file_original[:-4]+'_GNSS.ubx'
+                filelaser=self.file_original[:-4]+'_Laser.dat'
+            else:
+                filelaser=filepath
+            
+            
+            print('Reading file: ',filepath)
+            print('----------------------------')
+            stream = open(filepath, 'rb')
+            ubr = UBXReader(stream, ubxonly=False, validate=0)
+            
+            for msg in self.MSG_list:
+                setattr(self,msg,MSG_type() )
+            
+            i=0
+            self.corrupt=[]
+            self.other=[]
+            
+            for (raw_data, parsed_data) in ubr: 
+                # print(raw_data)
+                i+=1
                 # print(parsed_data)
-                if parsed_data.identity in self.MSG_id_list:
-                    j=self.MSG_id_list.index(parsed_data.identity)
-                    
-                    getattr(self,self.MSG_list[j]).parsed.append(parsed_data)
-                else:
-                    self.other.append(parsed_data)
+                try:
+                    # print(parsed_data)
+                    if parsed_data.identity in self.MSG_id_list:
+                        j=self.MSG_id_list.index(parsed_data.identity)
                         
-                    
-            except Exception as e: 
-                print(e)
-                print('Failed to parse')
-                self.corrupt.append(i)
-        
-        self.extract()
-        
-        if self.Laserrate>0:
-            self.Laser=Laser(filepath,rate=self.Laserrate)
-        
+                        getattr(self,self.MSG_list[j]).parsed.append(parsed_data)
+                    else:
+                        self.other.append(parsed_data)
+                            
+                        
+                except Exception as e: 
+                    print(e)
+                    print('Failed to parse')
+                    print(i)
+                    self.corrupt.append(i)
+            
+            self.extract()
+            
+            if self.Laserrate>0:
+                self.Laser=Laser(filelaser,rate=self.Laserrate)
+            
                 
     def extract(self):
         for msg in self.extr_list:
@@ -137,7 +170,88 @@ class UBX2data:
     def plot_mapOSM(self,MSG='PVT',z='iTOW',ax=[],cmap= cm.batlow,title=[]):
         plot_mapOSM(self,MSG=MSG,z=z,ax=ax,cmap= cmap,title=title)
 
+
+
+    def subset(self, timelim=[],timeformat='ms'):
+        for MSG in ['PVAT','PVT']: 
+            if  getattr(self,  MSG).len>0:
+                 d=getattr(self, MSG)
+                 if timeformat=='ms':
+                        lim=d.iTOW.searchsorted(timelim)
+                        iTOW_lim=timelim
+                 if timeformat=='s':
+                        lim=((d.iTOW -d.iTOW[0])/1000).searchsorted(timelim)
+                        iTOW_lim=d.iTOW[lim]
+                 break
+        
+        data2=UBX2data(self.file_original,name=self.name,Laserrate=self.Laserrate,load=False)
+
+        for attr in (self.MSG_list+['Laser']):
+            print(attr)
+            try:   
+                msg_data=getattr(self,attr)
+                lim2=d.iTOW.searchsorted(iTOW_lim)
+            except   AttributeError:
+                try:
+                    msg_data=getattr(self,attr)
+                    msg_data.extract()
+                    lim2=d.iTOW[iTOW_lim]
+                except Exception as e: 
+                    print(e)
+                    continue
+            d2=MSG_type()
+            
+            for a in msg_data.__dict__.keys():
+                print('/t\t',a)
+                try:
+                    setattr(d2,a,getattr(msg_data, a)[lim2[0]:lim2[1]] )
+                except TypeError:
+                    setattr(d2,a,getattr(msg_data, a))
+            setattr(d2,'len',lim2[1]-lim2[0])
+            setattr(data2,attr,d2)
+        return data2
+        
 # %% #########function definitions #############
+
+def cleanFromLaser(path):
+    """
+    Delete laser data from file restoring ubx data.
+    
+    path: file path
+   
+    
+    """
+    
+    f_GNSS=open(path[:-4]+'_GNSS.ubx',mode='wb')
+    f_Laser=open(path[:-4]+'_Laser.dat',mode='wb')
+    i=0
+    d=0
+    d2=0
+    end2=0
+    looking=True
+    with open(path,mode='rb') as f:
+        s = f.read()
+    while looking:
+        start=s.find(b'# iTOW',end2)-3
+        end=s.find(b'# end',end2)
+        if start==-1 or end==-1:
+            looking=False
+            break
+        end2=s.find(b'\r\n',end,end+30)+2
+        f_Laser.write(s[start+3:end2])
+        d+=end2-start-3
+        if start>1:
+            f_GNSS.write(s[i:start])
+            d2+=start-i
+        i=end2
+    f_GNSS.write(s[end2:len(s)])
+    d2+=len(s)-end2
+    f_GNSS.close()
+    f_Laser.close()
+    print('Number of Laser bits:',d)
+    print('Number of GNSS bits:',d2)    
+    
+
 
 def read_Laser(path,rate=5):
     """
@@ -158,24 +272,42 @@ def read_Laser(path,rate=5):
     i=0
     j=0
     t=0
+    lon=False
     for l in file:
-        if l[0]=='D':
-            a=l.split()
-            h.append(float(a[1]))
-            signQ.append(float(a[2]))
-            T.append(float(a[3])  )
-            iTOW.append(0) 
-            iTOW2.append(i*1000/rate)
+        if l[0]=='D' and lon:
+            try:
+                a=l.split()
+                h.append(float(a[1]))
+                signQ.append(float(a[2]))
+                T.append(float(a[3])  )
+                iTOW.append(0) 
+                iTOW2.append(i*1000/rate)
+            except:
+                h.append(-999)
+                signQ.append(-999)
+                T.append(-999  )
+                iTOW.append(0) 
+                iTOW2.append(i*1000/rate)
+                print('coud not parse string:', l)
             i+=1
             j+=1
+        
+                                
         elif l[:6]=='# iTOW':
             t=float(l.split()[2])
             # print(t)
+            lon=True
         elif l[:5]=='# end':
             for k in range(1,j+1):
                  iTOW[-k]=t-(k-1)*1000/rate
+            lon=False     
             j=0
-    return np.array(iTOW),np.array(h),np.array(signQ),np.array(T),np.array(iTOW2)+iTOW[0]
+        try:
+            T2=np.array(iTOW2)+iTOW[0]
+        except IndexError:
+            T2=[]
+            
+    return np.array(iTOW),np.array(h),np.array(signQ),np.array(T),np.array(T2)
     
     
 def check_data(data):
@@ -188,10 +320,10 @@ def check_data(data):
     
     """
     
-    
     print('\n\n###############################\n-----------------------------',
           data.name,
           '\n----------------------------\n###############################\n')
+    
     for attr in data.MSG_list:
         try:   
             d=getattr(data,attr)
@@ -228,13 +360,13 @@ def check_data(data):
         pl.figure()
         ax=pl.subplot(111)
         ax2=ax.twinx()
-        ax.set_ylabel('Laser h (mm)')
-        ax2.set_ylabel('GNSS Delta_h (mm)')
+        ax.set_ylabel('Laser h (m)')
+        ax2.set_ylabel('GNSS Delta_h (m)')
         ax.set_xlabel('time (ms)')
     
-        ax.plot(data.Laser.iTOW-data.PVAT.iTOW[0],data.Laser.h,'--xk',label='Laser, time1')
-        ax.plot(data.Laser.iTOW2-data.PVAT.iTOW[0],data.Laser.h,'--ob',label='Laser, time2')
-        ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0]),data.PVAT.height-(data.PVAT.height[0]-data.Laser.h[0]),'o:r',label='GPS height')
+        ax.plot(data.Laser.iTOW-data.PVAT.iTOW[0],data.Laser.h,'--xk',label='Laser')
+        # ax.plot(data.Laser.iTOW2-data.PVAT.iTOW[0],data.Laser.h,'--ob',label='Laser, time2')
+        ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0]),data.PVAT.height/1000-(data.PVAT.height[0]/1000-data.Laser.h[0]),'+:r',label='GPS height')
         
         lines, labels = ax.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
@@ -280,7 +412,57 @@ def plot_att(data,MSG='ATT',ax=[]):
     pl.title(data.name)
     
     
+def plot_att_laser(data,MSG='PVAT',ax=[]):
+    if ax==[]:
+        fig=pl.figure()
+        ax=pl.subplot(111)
+    else:
+        pl.sca(ax)
+        fig=pl.gcf()
     
+    d=getattr(data,MSG)
+    
+    ax2=ax.twinx()    
+    
+    if MSG=='PVAT':
+        ax.plot((d.iTOW-d.iTOW[0])/1000,d.vehPitch,'o-r',label='pitch')
+        ax.plot((d.iTOW-d.iTOW[0])/1000,d.vehRoll,'x-k',label='roll')
+        ax2.plot((d.iTOW-d.iTOW[0])/1000,d.vehHeading,'x-b',label='heading')
+    else:
+        ax.plot((d.iTOW-d.iTOW[0])/1000,d.pitch,'o-r',label='pitch')
+        ax.plot((d.iTOW-d.iTOW[0])/1000,d.roll,'x-k',label='roll')
+        ax2.plot((d.iTOW-d.iTOW[0])/1000,d.heading,'x-b',label='heading')
+    
+    
+    ax.set_ylabel('pitch/roll (deg)')
+    ax2.set_ylabel('heading (deg)')
+    ax.set_xlabel('time (s)')
+    ax2.yaxis.label.set_color('b')
+    ax2.tick_params(axis='y', colors='b')
+
+    
+    
+    try:
+        if len(data.Laser.h)==0:
+            raise AttributeError
+                
+        ax3=ax.twinx()
+        fig.subplots_adjust(right=0.75)
+        ax3.spines['right'].set_position(("axes", 1.2))
+        ax3.yaxis.label.set_color('g')
+        ax3.tick_params(axis='y', colors='g')
+        ax3.set_ylabel('Laser h (m)')
+        ax3.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h,':og',label='Laser')
+        lines3, labels3 = ax3.get_legend_handles_labels()
+    except AttributeError:
+        print('No laser data found')
+        lines3=[]
+        labels3=[]   
+    # ask matplotlib for the plotted objects and their labels
+    lines, labels = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax2.legend(lines + lines2+ lines3, labels + labels2+ lines3, loc=0)   
+    pl.title(data.name)    
     
 def plot_elevation_time(data,MSG='PVT',ax=[],title=[]):
     if ax==[]:
@@ -340,16 +522,27 @@ def plot_longlat(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow):
 
 
 # %% plot on map
-def plot_map(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow,title=[]):
+def plot_map(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow,title=[],timelim=[],timeformat='ms'):
     
     if ax==[]:
         fig=pl.figure()
         ax = pl.axes(projection=ccrs.PlateCarree())
     else:
         ax.axes(projection=ccrs.PlateCarree())
-        
-    d=getattr(data,MSG)     
-    c=getattr(d,z)
+    
+    
+    
+    d=getattr(data,MSG)   
+    if not timelim==[]:
+        if timeformat=='ms':
+            lim=d.iTOW.searchsorted(timelim)
+        if timeformat=='s':
+            lim=((d.iTOW -d.iTOW[0])/1000).searchsorted(timelim)
+            
+            
+            
+    c=getattr(d,z)[lim[0]:lim[1]] # get data color plot
+    
     if z=='height':
         label='elevation (m a.s.l.)'
         c=c/1000
@@ -361,7 +554,7 @@ def plot_map(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow,title=[]):
         label=z
         
     ax.coastlines()
-    im=ax.scatter(d.lon,d.lat,c=c,cmap=cmap,marker='x')
+    im=ax.scatter(d.lon[lim[0]:lim[1]],d.lat[lim[0]:lim[1]],c=c,cmap=cmap,marker='x')
     c=pl.colorbar(im, label=label)
     
     lon_formatter = LongitudeFormatter(number_format='0.1f',degree_symbol='',dateline_direction_label=True) # format lons
@@ -387,7 +580,7 @@ def image_spoof(self, tile): # this function pretends not to be a Python script
         return img, self.tileextent(tile), 'lower' # reformat for cartopy
     
     
-def plot_mapOSM(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow,title=[]):
+def plot_mapOSM(data,MSG='PVAT',z='height',ax=[],cmap= cm.batlow,title=[]):
     
     cimgt.OSM.get_image = image_spoof # reformat web request for street map spoofing
     osm_img = cimgt.OSM() # spoofed, downloaded street map

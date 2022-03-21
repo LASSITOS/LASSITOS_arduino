@@ -24,8 +24,8 @@ from UBX2data import *
 
 # %% check test data with mixed Laser and GNSS
 
-
 filepath=r'C:\Users\AcCap\GNSS_arduino\data_examples\GNSS_laser'
+filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples\GNSS_laser'
 
 #rate=1
 rate1=UBX2data(filepath+r'\a000101_1259.ubx',name='rate=1Hz')
@@ -39,6 +39,21 @@ check_data(rate1)
 check_data(rate5)
 check_data(rate10)
 check_data(rate20)
+
+
+# %% test cleaning laser
+filepath=r'C:\Users\Laktop\GNSS_arduino\data_examples\GNSS_laser'
+clean_manual=UBX2data(filepath+r'\a000101_2153_mclean.ubx',name='manual')
+clean_machine=UBX2data(filepath+r'\a000101_2153_GNSS.ubx',name='machine')
+original=UBX2data(filepath+r'\a000101_2153.ubx',name='original')
+check_data(clean_manual)
+check_data(clean_machine)
+check_data(original)
+
+pl.figure() 
+pl.plot( clean_manual.PVAT.iTOW,clean_manual.PVAT.vehPitch,'b+:')
+pl.plot( original.PVAT.iTOW,original.PVAT.vehPitch,'xr:')
+pl.plot( clean_machine.PVAT.iTOW,clean_machine.PVAT.vehPitch,marker='o',mec='g',mfc='none')
 
 
 # %% 
