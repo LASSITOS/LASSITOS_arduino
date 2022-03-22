@@ -59,3 +59,15 @@ pl.plot( clean_machine.PVAT.iTOW,clean_machine.PVAT.vehPitch,marker='o',mec='g',
 # %% 
 rate5=UBX2data(filepath+r'\a220315_0446.ubx')
 check_data(rate5)
+
+# %%  check readFiles.py and missing laser data
+data=UBX2data(filepath+r'\a000101_0457.ubx')
+check_data(data)
+
+for i in range(0, len(data.Laser.iTOW)-1):
+    if (data.Laser.iTOW[i+1]-data.Laser.iTOW[i]) > 300:
+        print(i,', ',data.Laser.iTOW[i+1]-data.Laser.iTOW[i])
+
+"""
+data Download worked fine. Laser data is missing
+"""

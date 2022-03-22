@@ -10,7 +10,27 @@ import time
 import os
 
 def read_file(file,path='',printcontent=False,com='COM8',baud=115200):
+    """
     
+
+    Parameters
+    ----------
+    file : TYPE
+        DESCRIPTION.
+    path : TYPE, optional
+        DESCRIPTION. The default is ''.
+    printcontent : TYPE, optional
+        DESCRIPTION. The default is False.
+    com : TYPE, optional
+        DESCRIPTION. The default is 'COM8'.
+    baud : TYPE, optional
+        DESCRIPTION. The default is 115200.
+
+    Returns
+    -------
+    None.
+
+    """
     # setting up serial port
     ser = serial.Serial(com, baud, timeout=0) 
     
@@ -34,9 +54,10 @@ def read_file(file,path='',printcontent=False,com='COM8',baud=115200):
         
         bitstring=b'READ:/'+file.encode()+b':'
         ser.write(bitstring) 
-        # print(bitstring)
+        print(bitstring)
         
         bites_written=0
+        printbites=5000
         while sweep: 
             l=ser.readline()
             if l!=b'':
@@ -52,8 +73,12 @@ def read_file(file,path='',printcontent=False,com='COM8',baud=115200):
                 elif r:
                     # print('print to file')
                     bites_written+= f.write(l)
-            
-            time.sleep(0.01) 
+                
+                if bites_written>printbites:
+                    print('Bites written: {:d}'.format(bites_written)  ) 
+                    printbites+=5000
+                    
+            time.sleep(0.001) 
     
         f.close()
         ser.close()
@@ -63,3 +88,6 @@ def read_file(file,path='',printcontent=False,com='COM8',baud=115200):
         print('error')
         print(e)
         ser.close()
+
+
+

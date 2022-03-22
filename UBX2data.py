@@ -158,17 +158,17 @@ class UBX2data:
     def plot_att(self, MSG='ATT',ax=[]):
         plot_att(self,MSG=MSG,ax=ax)
         
-    def plot_elevation_time(self, MSG='PVT',ax=[],title=[]):
+    def plot_elevation_time(self, MSG='PVAT',ax=[],title=[]):
         plot_elevation_time(self,MSG=MSG,ax=ax,title=title)
 
-    def plot_longlat(self,MSG='PVT',z='height',ax=[],cmap= cm.batlow):
+    def plot_longlat(self,MSG='PVAT',z='height',ax=[],cmap= cm.batlow):
         plot_longlat(self,MSG=MSG,z=z,ax=ax,cmap=cmap)
         
-    def plot_map(self,MSG='PVT',z='height',ax=[],cmap= cm.batlow):
+    def plot_map(self,MSG='PVAT',z='height',ax=[],cmap= cm.batlow):
         plot_map(self,MSG=MSG,z=z,ax=ax,cmap=cmap)
 
-    def plot_mapOSM(self,MSG='PVT',z='iTOW',ax=[],cmap= cm.batlow,title=[]):
-        plot_mapOSM(self,MSG=MSG,z=z,ax=ax,cmap= cmap,title=title)
+    def plot_mapOSM(self,MSG='PVAT',z='iTOW',ax=[],cmap= cm.batlow,title=[],extent=[]):
+        plot_mapOSM(self,MSG=MSG,z=z,ax=ax,cmap= cmap,title=title,extent=extent)
 
 
 
@@ -187,24 +187,24 @@ class UBX2data:
         data2=UBX2data(self.file_original,name=self.name,Laserrate=self.Laserrate,load=False)
 
         for attr in (self.MSG_list+['Laser']):
-            print(attr)
+            # print(attr)
             try:   
                 msg_data=getattr(self,attr)
-                lim2=d.iTOW.searchsorted(iTOW_lim)
+                lim2=msg_data.iTOW.searchsorted(iTOW_lim)
             except   AttributeError:
                 try:
                     msg_data=getattr(self,attr)
                     msg_data.extract()
-                    lim2=d.iTOW[iTOW_lim]
+                    lim2=msg_data.iTOW[iTOW_lim]
                 except Exception as e: 
                     print(e)
                     continue
             d2=MSG_type()
             
             for a in msg_data.__dict__.keys():
-                print('/t\t',a)
+                # print('\t',a)
                 try:
-                    setattr(d2,a,getattr(msg_data, a)[lim2[0]:lim2[1]] )
+                    setattr(d2,a,np.array(getattr(msg_data, a)[lim2[0]:lim2[1]] ))
                 except TypeError:
                     setattr(d2,a,getattr(msg_data, a))
             setattr(d2,'len',lim2[1]-lim2[0])
@@ -380,7 +380,7 @@ def check_data(data):
 
 
 
-def plot_att(data,MSG='ATT',ax=[]):
+def plot_att(data,MSG='ATT',ax=[],title=''):
     if ax==[]:
         fig=pl.figure()
         ax=pl.subplot(111)
@@ -409,7 +409,10 @@ def plot_att(data,MSG='ATT',ax=[]):
     lines, labels = ax.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax2.legend(lines + lines2, labels + labels2, loc=0)   
-    pl.title(data.name)
+    if title=='':
+        pl.title(data.name)
+    elif title!='none':
+        pl.title(title)
     
     
 def plot_att_laser(data,MSG='PVAT',ax=[]):
@@ -580,20 +583,42 @@ def image_spoof(self, tile): # this function pretends not to be a Python script
         return img, self.tileextent(tile), 'lower' # reformat for cartopy
     
     
-def plot_mapOSM(data,MSG='PVAT',z='height',ax=[],cmap= cm.batlow,title=[]):
+def plot_mapOSM(data,MSG='PVAT',z='height',ax=[],cmap= cm.batlow,title=[], extent=[]):
+    """
+    Plot data (z) on Open Street Map layer.
     
+    Parameters
+    ----------
+    data : TYPE
+        DESCRIPTION.
+    MSG : TYPE, optional
+        DESCRIPTION. The default is 'PVAT'.
+    z : TYPE, optional
+        DESCRIPTION. The default is 'height'.
+    ax : TYPE, optional
+        DESCRIPTION. The default is [].
+    cmap : TYPE, optional
+        DESCRIPTION. The default is cm.batlow.
+    title : TYPE, optional
+        DESCRIPTION. The default is [].
+    extent:     limits of map. In [[lon,lon,lat,lat]]
+
+    Returns
+    -------
+    None.
+
+    """
     cimgt.OSM.get_image = image_spoof # reformat web request for street map spoofing
     osm_img = cimgt.OSM() # spoofed, downloaded street map
     
     if ax==[]:
         fig=pl.figure()
         ax = pl.axes(projection=osm_img.crs)
-    else:
-        ax.axes(projection=osm_img.crs)
+  
     
     # prepare data
     d=getattr(data,MSG)     
-    c=getattr(d,z)
+    c=np.array( getattr(d,z))
     if z=='height':
         label='elevation (m a.s.l.)'
         c=c/1000
@@ -604,15 +629,14 @@ def plot_mapOSM(data,MSG='PVAT',z='height',ax=[],cmap= cm.batlow,title=[]):
     else:
         label=z
     
-    dx=(np.max(d.lon)-np.min(d.lon))
-    dy=(np.max(d.lat)-np.min(d.lat))
-    W=np.max([dx,dy])*3/5
-    print(W)
-    center=[(np.max(d.lon)+np.min(d.lon))/2, (np.max(d.lat)+np.min(d.lat))/2]
-    extent = [center[0]-W,center[0]+W, center[1]-W,center[1]+W] # Contiguous US bounds
-   
-    
-   
+    if extent==[]:
+        dx=(np.max(d.lon)-np.min(d.lon))
+        dy=(np.max(d.lat)-np.min(d.lat))
+        W=np.max([dx,dy])*3/5
+        center=[(np.max(d.lon)+np.min(d.lon))/2, (np.max(d.lat)+np.min(d.lat))/2]
+        extent = [center[0]-W,center[0]+W, center[1]-W,center[1]+W] # Contiguous US bounds
+        print(extent)
+        
     # setup map
     ax.set_extent(extent) # set extents
     ax.set_xticks(np.linspace(extent[0],extent[1],3),crs=ccrs.PlateCarree()) # set longitude indicators
