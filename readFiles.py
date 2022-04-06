@@ -10,27 +10,26 @@ import time
 import os
 
 def read_file(file,path='',printcontent=False,com='COM8',baud=115200):
-    """
+    # """
+    # Parameters
+    # ----------
+    # file : TYPE
+    #     DESCRIPTION.
+    # path : TYPE, optional
+    #     DESCRIPTION. The default is ''.
+    # printcontent : TYPE, optional
+    #     DESCRIPTION. The default is False.
+    # com : TYPE, optional
+    #     DESCRIPTION. The default is 'COM8'.
+    # baud : TYPE, optional
+    #     DESCRIPTION. The default is 115200.
+    # Returns
+    # -------
+    # None.
+    # Example:  read_file('a000101_0457.txt',path=r'C:\Users\AcCap\GNSS_arduino\data_examples\GNSS_laser', printcontent=False,com='COM8',baud=115200)
+
+    # """
     
-
-    Parameters
-    ----------
-    file : TYPE
-        DESCRIPTION.
-    path : TYPE, optional
-        DESCRIPTION. The default is ''.
-    printcontent : TYPE, optional
-        DESCRIPTION. The default is False.
-    com : TYPE, optional
-        DESCRIPTION. The default is 'COM8'.
-    baud : TYPE, optional
-        DESCRIPTION. The default is 115200.
-
-    Returns
-    -------
-    None.
-
-    """
     # setting up serial port
     ser = serial.Serial(com, baud, timeout=0) 
     

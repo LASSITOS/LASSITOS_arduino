@@ -60,6 +60,8 @@ class Laser:
     def __init__(self,path,rate=5):
         self.iTOW,self.h,self.signQ,self.T,self.iTOW2=read_Laser(path,rate=rate)
                
+    
+
 
 class UBX2data:
     
@@ -67,7 +69,7 @@ class UBX2data:
     MSG_id_list=['NAV-PVT','NAV-ATT','ESF-MEAS','ESF-INS','ESF-ALG','ESF-STATUS','NAV-PVAT']
     extr_list=['ATT','PVT','INS','PVAT']
     
-    def __init__(self,filepath,name='',Laserrate=5,clean=True,load=True):
+    def __init__(self,filepath,name='',Laserrate=5,clean=True,load=True, correct_Laser=True):
         """
             Read GNSS and Laser data from .ubx data file. Additional methods are available for plotting and handling data.    
         
@@ -142,9 +144,35 @@ class UBX2data:
             
             self.extract()
             
+            # load laser data
             if self.Laserrate>0:
                 self.Laser=Laser(filelaser,rate=self.Laserrate)
             
+                # correct h with angles from INS
+                if correct_Laser:
+                    self.corr_h_laser()
+    
+    def corr_h_laser(self):
+        """
+        correct height with angles from INS
+        """   
+        try:
+            i=self.PVAT.iTOW.searchsorted( self.Laser.iTOW)
+            j=np.array(i)-1
+            
+            pitch=self.PVAT.vehPitch[j]+(self.PVAT.vehPitch[i]-self.PVAT.vehPitch[j])/(self.PVAT.iTOW[i]-self.PVAT.iTOW[j])*(self.Laser.iTOW-self.PVAT.iTOW[j])
+            roll=self.PVAT.vehRoll[j]+(self.PVAT.vehRoll[i]-self.PVAT.vehRoll[j])/(self.PVAT.iTOW[i]-self.PVAT.iTOW[j])*(self.Laser.iTOW-self.PVAT.iTOW[j])
+            
+            self.Laser.h_corr=self.Laser.h*(np.cos(pitch/180*np.pi)*np.cos(roll/180*np.pi))
+        
+        except Exception as e: 
+            print(e)
+            print('Failed to correct Laser height')
+            try:
+                self.Laser.h_corr=np.zeros_like(self.Laser.h)
+            except AttributeError:
+                print('Laser data not found.')
+                
                 
     def extract(self):
         for msg in self.extr_list:
@@ -306,8 +334,14 @@ def read_Laser(path,rate=5):
             T2=np.array(iTOW2)+iTOW[0]
         except IndexError:
             T2=[]
-            
-    return np.array(iTOW),np.array(h),np.array(signQ),np.array(T),np.array(T2)
+    
+    h=np.array(h)
+    h[h==-999]=np.nan
+    T=np.array(T)
+    T[T==-999]=np.nan
+    signQ=np.array(signQ)
+    signQ[signQ==-999]=np.nan
+    return np.array(iTOW),h,signQ,T,np.array(T2)
     
     
 def check_data(data):
@@ -520,9 +554,38 @@ def plot_longlat(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow):
 
         
 
+def plot_summary(data,extent,cmap=cm.batlow,):
+    
+    fig=pl.figure(figsize=(8,10))
+    spec = fig.add_gridspec(ncols=1, nrows=9)
+    cimgt.OSM.get_image = image_spoof # reformat web request for street map spoofing
+    osm_img = cimgt.OSM() # spoofed, downloaded street map
+    
+    ax0 = fig.add_subplot(spec[0:3, 0],projection=osm_img.crs)
+    data.plot_mapOSM(MSG='PVAT',z='iTOW',extent=extent,ax=ax0, cmap=cmap  )
+    
+    ax1 = fig.add_subplot(spec[3:5, 0])
+    ax1.plot((data.PVAT.iTOW-data.PVAT.iTOW[0])/1000,
+              [distance.distance((data.PVAT.lat[0],data.PVAT.lon[0]),(data.PVAT.lat[0],x)).m for x in data.PVAT.lon ],
+              'x:',label='East-West')
+    ax1.plot((data.PVAT.iTOW-data.PVAT.iTOW[0])/1000,
+              [distance.distance((data.PVAT.lat[0],data.PVAT.lon[0]),(x,data.PVAT.lon[0])).m for x in data.PVAT.lat ],
+              '+:',label='North-South')
+    ax1.set_ylabel('Distance (m)')
+    ax1.legend()
+    
+    ax2 = fig.add_subplot(spec[5:7, 0])
+    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h, 'x:',label='original')
+    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h_corr, '+:k',label='corrected')
+    ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0])/1000,data.PVAT.height/1000-(data.PVAT.height[0]/1000-data.Laser.h[0]),'+:r',label='GPS height')
+    ax2.set_ylabel('h_laser (m)')
+    ax2.set_xlim(ax1.get_xlim())
+    ax2.legend()
+    
+    ax3 = fig.add_subplot(spec[7:9, 0])
+    plot_att(data,MSG='PVAT',ax=ax3,title='none')
 
-
-
+    return fig
 
 # %% plot on map
 def plot_map(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow,title=[],timelim=[],timeformat='ms'):
