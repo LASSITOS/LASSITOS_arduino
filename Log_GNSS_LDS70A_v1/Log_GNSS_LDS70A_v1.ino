@@ -94,6 +94,7 @@ int bitesToWrite;
 // Setting for u-blox 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 bool logging = false;
+bool log_GPS = true;
 
 bool IMUcalibration=false;
 int NavigationFrequency = 5;
@@ -528,6 +529,11 @@ void setupGNSS(){
       myGNSS.setAutoNAVPVAT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
       myGNSS.logNAVPVAT(); // Enable NAV PVT data logging
     }
+    else {
+      // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
+      myGNSS.setAutoNAVPVAT(false, false); // Enable automatic NAV PVT messages without callback to printPVTdata
+      myGNSS.logNAVPVAT(); // Enable NAV PVT data logging
+    }
     if (log_NAVATT) {
       myGNSS.setAutoNAVATT(true, false); 
       myGNSS.logNAVATT(); 
@@ -556,11 +562,13 @@ void setupGNSS(){
       myGNSS.logRXMRAWX(); // Enable RXM RAWX data logging
     }
     
-	if (log_STATUS) {
+	  if (log_STATUS) {
       myGNSS.logESFSTATUS();
 	  myGNSS.logESFALG();
     }
-	
+    
+	  myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+   
     Serial.println(F("GPS setting updated"));
     strcat(txString,"GPS setting updated");
 }
@@ -586,11 +594,11 @@ void stop_logging(fs::FS &fs) {
 	  myGNSS.setAutoRXMRAWX(false, false); // Disable the automatic RXM RAWX messages
 	}
 	if (log_NAVPVT) {
-	  myGNSS.setAutoPVT(false, false); // Enable automatic NAV PVT messages without callback to printPVTdata
+	  myGNSS.setAutoPVT(false, false); // Disable  automatic NAV PVT messages without callback to printPVTdata
 	  }
-//	if (log_NAVPVAT) {
-//	  myGNSS.setAutoNAVPVAT(false, false); // Enable automatic NAV PVT messages without callback to printPVTdata
-//	}
+	if (log_NAVPVAT) {
+	  myGNSS.setAutoNAVPVAT(false, false); // Disable  automatic NAV PVAT messages without callback to printPVTdata
+	}
 	if (log_NAVATT) {
 	  myGNSS.setAutoNAVATT(false, false); 
 	}
@@ -612,7 +620,7 @@ void stop_logging(fs::FS &fs) {
   myGNSS.checkUblox(); // Process any remaining data
   uint16_t remainingBytes = myGNSS.fileBufferAvailable(); // Check if there are any bytes remaining in the file buffer
   
-  while (remainingBytes > 0) // While there is still data in the file buffer
+  while (remainingBytes > 0 and log_GPS) // While there is still data in the file buffer
   {
     digitalWrite(LED_BUILTIN, HIGH); // Flash LED_BUILTIN while we write to the SD card
     uint8_t myBuffer[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
@@ -708,7 +716,7 @@ void setRate( String rxValue){
       BLE_message=true;
       sprintf(txString,"New navigation frequency: %d",NavigationFrequency);
       Serial.println(txString);
-//      myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
+      myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
     } else {
       BLE_message=true;
       sprintf(txString,"New frequency can not be parsed form string '%s'. Valid format is 'RATE:2:'",rxValue);
@@ -794,6 +802,7 @@ void setLogFlag( String rxValue, bool &flag, String flagname){
     strcpy(txString,"Datalogging running. Can't change flag log setting now. First stop measurment!");
     Serial.println(txString);
   }
+  Send_tx_String(txString);
 }
 
 
@@ -818,6 +827,7 @@ void  setIMUcal( String rxValue){
     strcpy(txString,"Datalogging running. Can't change IMUcalibration setting now. First stop measurment!");
     Serial.println(txString);
   }
+   Send_tx_String(txString);
 }
 
 
@@ -859,6 +869,7 @@ void readFiles( String rxValue){
     strcpy(txString,"Datalogging running. Can't files now. First stop measurment!");
     Serial.println(txString);
   }
+   Send_tx_String(txString);
 }
 
 void getFileList(){  
@@ -980,7 +991,28 @@ void  check_laser(){
   Send_tx_String(txString);
 }
 
+// Get Laser data for 1 second and send it over BLE and serial
+void  commands(){  
+   Send_tx_String(txString);
+   strcpy(txString,"");
+   strcat(txString,"\nCommands \n# --------------------------------------\n");
+   strcat(txString,"\n Serial only\n# .................\n");
+   strcat(txString,"READ Read last file of last measurement. If argument is passed with READ:<< nfile>>: read file nfile \nLIST  Get list of files in SD card \n ");
 
+   strcat(txString,"\n Serial and BLE:\n# .................\n");
+   strcat(txString," STOP  Stops measurement \nSTART Starts new measurement \nRATE:<<N>>: Set sampling rate to N \nCHECKATT  Get attitude angles from IMU anf GPS coordinates \n CHECKLASER  Get Laser data for 1 second and send it over BLE and serial \nCOMS  List commands \nLOGGPS:<<b>>: Log GPS data if b=1  (Default) ");
+   Send_tx_String(txString);
+   delay(100);
+   strcpy(txString,"");
+   strcat(txString,"\n BLE only:\n# .................\n");
+   strcat(txString,"CHECKIMU  Get IMU data and send them over BLE+serial for manual check \nDYNMODEL:<<n>>: Set dynamic model to n.  Sensor need to be recalibrated after changing the setting.\n        n=4: Automotive (default) \n        n=0: Applications with low acceleration. \n        n=6: Airborne. Greater vertical acceleration  \n");
+   strcat(txString,"IMUCAL:<<b>>: Change setting for regular check for IMU calibration. b=0,1 \n LOGRMX:<<b>>: Log RMX messages or not. b=0,1 \nNAVPVT:<<b>>: same \nNAVPVAT:<<b>>: same  \n");
+   strcat(txString,"ESFINS:<<b>>: same\nESFRAW:<<b>>:  same \nESFMEAS:<<b>>:  same \nESFALG:<<b>>: same \n");
+   strcat(txString,"# --------------------------------------\n");   
+   Send_tx_String(txString);
+   delay(100);
+   strcpy(txString,"");
+}
 
 // /////////////////////////////////////////////
 // ---------------------------------------------
@@ -1021,6 +1053,8 @@ class MyCallbacks: public BLECharacteristicCallbacks {
            check_laser();
         } else if (rxValue.find("CHECKLASER") != -1) {
            check_laser();
+        } else if (rxValue.find("COMS") != -1) {
+           commands();
         } else if (rxValue.find("RATE") != -1) {
            char passValue[40];
            for (int i = 0; i < rxValue.length(); i++){
@@ -1076,7 +1110,12 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 		   for (int i = 0; i < rxValue.length(); i++){
                passValue[i] = rxValue[i];}
            setLogFlag( passValue, log_ESFALG, "ESFALG");
-		}else{
+		} else if (rxValue.find("LOGGPS") != -1) {
+           char passValue[40];
+       for (int i = 0; i < rxValue.length(); i++){
+               passValue[i] = rxValue[i];}
+           setLogFlag( passValue, log_GPS, "LOGGPS");
+    }else{
           BLE_message=true;
           strcpy(txString,"Input can not be parsed retry!");
           Serial.println(txString);
@@ -1194,7 +1233,7 @@ void setup(){
       }
     }
 
-	spi.begin(SCK, MISO, MOSI, CS);							   
+	  spi.begin(SCK, MISO, MOSI, CS);							   
     if(!SD.begin(CS,spi,SPI_rate)){
         Serial.println("Card Mount Failed");
         while (1);
@@ -1213,7 +1252,7 @@ void setup(){
     } else {
         Serial.println("UNKNOWN");
     }
-    listDir(SD, "/", 0);
+//    listDir(SD, "/", 0);
     uint64_t cardSize = SD.cardSize() / (1024 * 1024);
     Serial.printf("SD Card Size: %lluMB\n", cardSize);
     Serial.printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
@@ -1259,7 +1298,7 @@ void loop(){
     //  GNSS data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     myGNSS.checkUblox(); // Check for the arrival of new data and process it.
-    while (myGNSS.fileBufferAvailable() >= sdWriteSize and ((millis()-logTime_laser) < Laser_log_intervall) ) // Check to see if we have at least sdWriteSize waiting in the buffer
+    while (myGNSS.fileBufferAvailable() >= sdWriteSize and ((millis()-logTime_laser) < Laser_log_intervall) and log_GPS) // Check to see if we have at least sdWriteSize waiting in the buffer
     {
       digitalWrite(LED_BUILTIN, HIGH); // Flash LED_BUILTIN each time we write to the SD card
 
@@ -1389,6 +1428,10 @@ void loop(){
         check_attitude( );
       } else if (rxValue.indexOf("CHECKLASER") != -1) {
         check_laser();
+      } else if (rxValue.indexOf("COMS") != -1) {
+        commands(); 
+      }else if (rxValue.indexOf("LOGGPS") != -1) {
+           setLogFlag( rxValue, log_GPS, "LOGGPS");
       }else{
         BLE_message=true;
         strcpy(txString,"Input can not be parsed retry!");

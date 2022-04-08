@@ -292,7 +292,7 @@ void setup(){
 //    Serial.print("Created file: ");
 //    Serial.println(dataFileName);
 //    delay(500);
-//    dataFile=SD.open( dataFileName, FILE_APPEND);
+    dataFile=SD.open( dataFileName, FILE_APPEND);
     if(!dataFile){
               Serial.print("Freezing! Could no open file for appending: ");
               Serial.println(dataFileName);
