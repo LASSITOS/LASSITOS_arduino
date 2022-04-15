@@ -330,10 +330,14 @@ def read_Laser(path,rate=5):
                  iTOW[-k]=t-(k-1)*1000/rate
             lon=False     
             j=0
-        try:
-            T2=np.array(iTOW2)+iTOW[0]
-        except IndexError:
-            T2=[]
+            
+            
+        # if i%500==0:
+            # print('i: ',i)
+    try:
+        t2=np.array(iTOW2)+iTOW[0]
+    except IndexError:
+        t2=np.array([])
     
     h=np.array(h)
     h[h==-999]=np.nan
@@ -341,7 +345,7 @@ def read_Laser(path,rate=5):
     T[T==-999]=np.nan
     signQ=np.array(signQ)
     signQ[signQ==-999]=np.nan
-    return np.array(iTOW),h,signQ,T,np.array(T2)
+    return np.array(iTOW),h,signQ,T,t2
     
     
 def check_data(data):
