@@ -51,18 +51,83 @@ char addrStr[5];
 uint16_t dat;
 char datStr[19];
 uint32_t msg;
-
+uint16_t out;
 
 char txString[50];  
 char txString2[50];
 
 // Sinus function variables
 //-=-=-=-=-=-=-=-=-=-=-=-
+uint64_t clock_divider=1;
+uint64_t PWM_freq = 125000000;
+
 uint16_t freqAdd;
-int freq;
+uint64_t freq=3000;
 uint16_t freqDat;
+int gain;
+uint16_t gainDAT = 0x0800;
+
 
 //-=-=-=-=-=-=-=-=-=-=-=-
+
+
+
+// /////////////////////////////////////////////
+// ---------------------------------------------
+// SignalGen functions
+// ---------------------------------------------
+// /////////////////////////////////////////////
+
+void configureSineWave(){
+
+  // Prepare the parameters:
+  uint64_t temp=freq*0x1000000*clock_divider;
+  uint64_t freqTW=temp/PWM_freq;  // get frequency tuning word 0x1000000=2**24
+  uint16_t freqMSB=freqTW>>8;
+  uint16_t freqLSB=(freqTW&0xFF)<<8;
+//  Serial.print("freq");
+//  Serial.println(freq);
+//  Serial.print("temp");
+//  Serial.println(temp,BIN);
+//  Serial.print("freqTW");
+//  Serial.println(freqTW,BIN);
+//  Serial.print("freqMSB");
+//  Serial.println(freqMSB,BIN);
+//  Serial.print("freqLSB");
+//  Serial.println(freqLSB,BIN);      
+//  program()
+  writeReg(0x27,0x0031);  //Sinewave Mode
+  writeReg(0x45,0x0000); //Static phase/freq
+  writeReg(0x3E,freqMSB); //Freq MSB
+  writeReg(0x3F,freqLSB); //Freq LSB
+  writeReg(0x35,gainDAT); //digital gain
+}
+
+void run(){
+  out=readReg(0x1E);
+  Serial.print("Current run mode:");
+  Serial.println(out,BIN);
+  writeReg(0x1E,0x0001);
+  trigger();
+  out=readReg(0x1E);
+  Serial.print("New run mode:");
+  Serial.println(out,BIN);
+}
+void program(){
+  digitalWrite(triggerGPIO,HIGH);
+  writeReg(0x1E,0x0000);
+}
+void trigger(){
+  Serial.println("[AWG] Triggerring");
+  digitalWrite(triggerGPIO,HIGH);
+  digitalWrite(triggerGPIO,LOW);
+}
+
+void stop_trigger(){
+  Serial.println("Stop triggerring");
+  digitalWrite(triggerGPIO,LOW);
+  digitalWrite(triggerGPIO,HIGH);
+}
 
 
 
@@ -92,45 +157,25 @@ void writeReg (uint16_t addr,uint16_t dat) {
   writeMSG(  addr,dat);
   delay(1);
   writeMSG( 0x1D , 0x01 );
-  delay(2);
-  uint32_t out=spiCommand( (0x80 << 24) + (addr << 16) + 0x0000 ); // Read register
-  uint16_t out2=out & ~(~0U << 16); // drop first part 
-  if ( dat != out){
-      Serial.println("Write command unsuccessful");
-      Serial.println(dat,BIN);
-      Serial.println(out,BIN);
-      Serial.println(out2,BIN);
-  }
+//  delay(2);
+//  uint32_t out=spiCommand( (0x80 << 24) + (addr << 16) + 0x0000 ); // Read register
+//  uint16_t out2=out & ~(~0U << 16); // or out & 0xFFFF
+//  if ( dat != out){
+//      Serial.println("Write command unsuccessful");
+//      Serial.println(dat,BIN);
+//      Serial.println(out,BIN);
+//      Serial.println(out2,BIN);
+//  }
 }
 
 
 uint32_t readReg(uint16_t addr){
 //   Serial.println("Reading register");
    uint32_t msg = (0x80 << 24) + (addr << 16) + 0x0000;
-   uint32_t out=spiCommand(  msg );
-   sprintf(txString2,"Addr:%#02X Data:",addr);
-   Serial.print(txString2);
-   Serial.println(out,BIN);
+   uint16_t out=spiCommand(  msg );
    return out;
 }
 
-// /////////////////////////////////////////////
-// ---------------------------------------------
-// SignalGen functions
-// ---------------------------------------------
-// /////////////////////////////////////////////
-
-void trigger(){
-  Serial.println("[AWG] Triggerring");
-  digitalWrite(triggerGPIO,HIGH);
-  digitalWrite(triggerGPIO,LOW);
-}
-
-void stop_trigger(){
-  Serial.println("Stop triggerring");
-  digitalWrite(triggerGPIO,LOW);
-  digitalWrite(triggerGPIO,HIGH);
-}
 
 
 
@@ -176,6 +221,12 @@ void setup(){
     digitalWrite(CS, HIGH);
     pinMode(triggerGPIO, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
     digitalWrite(triggerGPIO, HIGH);
+
+
+    // setup AD9106
+    delay(100);
+    configureSineWave();
+        
 }
 
 
@@ -204,10 +255,14 @@ void loop(){
           addr=strtoul (addrStr, NULL, 16);
           Serial.print("Reading register: ");
 //          Serial.println(addr, HEX);
-          readReg(addr);
-      
+          out=readReg(addr);
+          sprintf(txString2,"Addr:%#02X Data:",addr);
+          Serial.print(txString2);
+          Serial.println(out,BIN);
+
+          
       // Writing to register    
-      } else if (rxValue.charAt(0)== 'W') {
+      } else if (rxValue.charAt(0)== 'W' and (rxValue.charAt(5) == 'X' or rxValue.charAt(5) == 'B')) {
           if(rxValue.charAt(5) == 'X'){
               rxValue.substring(6,12).toCharArray(datStr,7);
               Serial.print(datStr);
