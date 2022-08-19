@@ -418,7 +418,7 @@ def check_data(data):
 
 
 
-def plot_att(data,MSG='ATT',ax=[],title=''):
+def plot_att(data,MSG='ATT',ax=[],title='',heading=True):
     if ax==[]:
         fig=pl.figure()
         ax=pl.subplot(111)
@@ -427,26 +427,32 @@ def plot_att(data,MSG='ATT',ax=[],title=''):
     
     d=getattr(data,MSG)
     
-    ax2=ax.twinx()    
+    if heading:
+            ax2=ax.twinx()    
     
     if MSG=='PVAT':
         ax.plot((d.iTOW-d.iTOW[0])/1000,d.vehPitch,'o-r',label='pitch')
         ax.plot((d.iTOW-d.iTOW[0])/1000,d.vehRoll,'x-k',label='roll')
-        ax2.plot((d.iTOW-d.iTOW[0])/1000,d.vehHeading,'x-b',label='heading')
+        if heading:
+            ax2.plot((d.iTOW-d.iTOW[0])/1000,d.vehHeading,'x-b',label='heading')
     else:
         ax.plot((d.iTOW-d.iTOW[0])/1000,d.pitch,'o-r',label='pitch')
         ax.plot((d.iTOW-d.iTOW[0])/1000,d.roll,'x-k',label='roll')
-        ax2.plot((d.iTOW-d.iTOW[0])/1000,d.heading,'x-b',label='heading')
+        if heading:
+            ax2.plot((d.iTOW-d.iTOW[0])/1000,d.heading,'x-b',label='heading')
     
     
     ax.set_ylabel('pitch/roll (deg)')
-    ax2.set_ylabel('heading (deg)')
     ax.set_xlabel('time (s)')
-   
-    # ask matplotlib for the plotted objects and their labels
-    lines, labels = ax.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax2.legend(lines + lines2, labels + labels2, loc=0)   
+    if heading:
+        ax2.set_ylabel('heading (deg)')
+        # ask matplotlib for the plotted objects and their labels
+        lines, labels = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines + lines2, labels + labels2, loc=0)   
+    else:
+        ax.legend(loc=0)
+        
     if title=='':
         pl.title(data.name)
     elif title!='none':
