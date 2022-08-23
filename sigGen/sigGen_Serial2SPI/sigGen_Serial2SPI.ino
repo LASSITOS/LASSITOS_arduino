@@ -120,12 +120,14 @@ void program(){
 void trigger(){
   Serial.println("[AWG] Triggerring");
   digitalWrite(triggerGPIO,HIGH);
+  delay(100);
   digitalWrite(triggerGPIO,LOW);
 }
 
 void stop_trigger(){
   Serial.println("Stop triggerring");
   digitalWrite(triggerGPIO,LOW);
+  delay(100);
   digitalWrite(triggerGPIO,HIGH);
 }
 
@@ -197,7 +199,60 @@ void LED_blink(int len, int times ) { // Used for blinking LED  times at interva
 // Input parsing functions
 // ---------------------------------------------
 // /////////////////////////////////////////////
+void parse( String rxValue){
+	  //Start new data files if START is received and stop current data files if STOP is received
+  if (rxValue.indexOf("START") != -1) { 
+	run();
+	trigger();
+  } else if (rxValue.indexOf("STOP") != -1) {
+	stop_trigger();
+  } else if (rxValue.indexOf("TRIGGER") != -1) {
+	trigger();
+	
+  } else if (rxValue.indexOf("SETFREQ") != -1) {
+	Serial.println("Setting new frequency value! ")
 
+   // Read register 	
+  } else if (rxValue.charAt(0)== 'R' and rxValue.charAt(5)== 'R') {
+
+	  rxValue.substring(1,5).toCharArray(addrStr,5);
+	  addr=strtoul (addrStr, NULL, 16);
+	  Serial.print("Reading register: ");
+//          Serial.println(addr, HEX);
+	  out=readReg(addr);
+	  sprintf(txString2,"Addr:%#02X Data:",addr);
+	  Serial.print(txString2);
+	  Serial.println(out,BIN);
+
+	  
+  // Write to register    
+  } else if (rxValue.charAt(0)== 'W' and (rxValue.charAt(5) == 'X' or rxValue.charAt(5) == 'B')) {
+	  if(rxValue.charAt(5) == 'X'){
+		  rxValue.substring(6,12).toCharArray(datStr,7);
+		  Serial.print(datStr);
+		  dat=strtoul (datStr, NULL, 16);
+		
+	  }else if(rxValue.charAt(5)== 'B'){
+		   rxValue.substring(6,22).toCharArray(datStr,17);
+//               Serial.print(datStr);
+		   dat=strtoul (datStr, NULL, 2);
+	  }
+	  rxValue.substring(1,5).toCharArray(addrStr,5);
+	  addr=strtoul (addrStr, NULL, 16);
+	  
+//          Serial.print("Writing register: ");
+//          Serial.print(addr, HEX);
+//          Serial.print(", data: ");
+//          Serial.println(dat, HEX);
+	  sprintf(txString2,"Writing register:%#02X Data:%#04X",addr);
+	  Serial.print(txString2);
+	  Serial.println(dat,BIN);
+	  writeReg(addr,dat);
+  
+  }else{
+	Serial.println("Input could not be parsed!");
+  } 	
+}
 
 
 
@@ -241,54 +296,8 @@ void loop(){
       for (int i = 0; i < rxValue.length(); i++)
         Serial.print(rxValue[i]);
       Serial.println();
-
-      //Start new data files if START is received and stop current data files if STOP is received
-      if (rxValue.indexOf("START") != -1) { 
-        run();
-        trigger();
-      } else if (rxValue.indexOf("STOP") != -1) {
-        stop_trigger();
+	  parse(rxValue);
       
-      // Reading register    
-      } else if (rxValue.charAt(0)== 'R' and rxValue.charAt(5)== 'R') {
-
-          rxValue.substring(1,5).toCharArray(addrStr,5);
-          addr=strtoul (addrStr, NULL, 16);
-          Serial.print("Reading register: ");
-//          Serial.println(addr, HEX);
-          out=readReg(addr);
-          sprintf(txString2,"Addr:%#02X Data:",addr);
-          Serial.print(txString2);
-          Serial.println(out,BIN);
-
-          
-      // Writing to register    
-      } else if (rxValue.charAt(0)== 'W' and (rxValue.charAt(5) == 'X' or rxValue.charAt(5) == 'B')) {
-          if(rxValue.charAt(5) == 'X'){
-              rxValue.substring(6,12).toCharArray(datStr,7);
-              Serial.print(datStr);
-              dat=strtoul (datStr, NULL, 16);
-            
-          }else if(rxValue.charAt(5)== 'B'){
-               rxValue.substring(6,22).toCharArray(datStr,17);
-//               Serial.print(datStr);
-               dat=strtoul (datStr, NULL, 2);
-          }
-          rxValue.substring(1,5).toCharArray(addrStr,5);
-          addr=strtoul (addrStr, NULL, 16);
-          
-//          Serial.print("Writing register: ");
-//          Serial.print(addr, HEX);
-//          Serial.print(", data: ");
-//          Serial.println(dat, HEX);
-          sprintf(txString2,"Writing register:%#02X Data:%#04X",addr);
-          Serial.print(txString2);
-          Serial.println(dat,BIN);
-          writeReg(addr,dat);
-      
-      }else{
-        Serial.println(txString);
-      }
       Serial.println("*********");
       }
   }  
