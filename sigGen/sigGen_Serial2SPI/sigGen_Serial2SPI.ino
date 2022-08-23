@@ -244,6 +244,7 @@ void loop(){
 
       //Start new data files if START is received and stop current data files if STOP is received
       if (rxValue.indexOf("START") != -1) { 
+        run();
         trigger();
       } else if (rxValue.indexOf("STOP") != -1) {
         stop_trigger();
