@@ -59,7 +59,7 @@ char txString2[50];
 // Sinus function variables
 //-=-=-=-=-=-=-=-=-=-=-=-
 uint64_t clock_divider=1;
-uint64_t PWM_freq = 125000000;
+uint64_t AWG_clock_freq = 125000000;
 
 uint16_t freqAdd;
 uint64_t freq=3000;
@@ -82,7 +82,7 @@ void configureSineWave(){
 
   // Prepare the parameters:
   uint64_t temp=freq*0x1000000*clock_divider;
-  uint64_t freqTW=temp/PWM_freq;  // get frequency tuning word 0x1000000=2**24
+  uint64_t freqTW=temp/AWG_clock_freq;  // get frequency tuning word 0x1000000=2**24
   uint16_t freqMSB=freqTW>>8;
   uint16_t freqLSB=(freqTW&0xFF)<<8;
 //  Serial.print("freq");
@@ -154,6 +154,9 @@ void setGain(float value){
   }
   writeReg(0x35,gainDAT); //digital gain
 }
+
+
+
 // /////////////////////////////////////////////
 // ---------------------------------------------
 // SPI functions
@@ -330,7 +333,7 @@ void setup(){
 
     
 
-	  spi.begin(SCK, MISO, MOSI, CS);							   
+	spi.begin(SCK, MISO, MOSI, CS);							   
     pinMode(CS, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
     digitalWrite(CS, HIGH);
     pinMode(triggerGPIO, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
