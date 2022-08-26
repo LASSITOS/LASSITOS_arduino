@@ -40,7 +40,7 @@ int statLED = 13;
 #define MOSI  32
 #define CS  5
 #define SPI_rate 10000000
-#define triggerGPIO 27         // chip detect pin is shorted to GND if a card is inserted. (Otherwise pulled up by 10kOhm)
+#define triggerGPIO 27         
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
@@ -64,7 +64,7 @@ uint64_t PWM_freq = 125000000;
 uint16_t freqAdd;
 uint64_t freq=3000;
 uint16_t freqDat;
-int gain;
+float gain=0;
 uint16_t gainDAT = 0x0800;
 
 
@@ -100,6 +100,8 @@ void configureSineWave(){
   writeReg(0x45,0x0000); //Static phase/freq
   writeReg(0x3E,freqMSB); //Freq MSB
   writeReg(0x3F,freqLSB); //Freq LSB
+
+//  gainDAT=int((gain+2)*4095/4) << 4;
   writeReg(0x35,gainDAT); //digital gain
 }
 
@@ -129,10 +131,29 @@ void stop_trigger(){
   digitalWrite(triggerGPIO,LOW);
   delay(100);
   digitalWrite(triggerGPIO,HIGH);
+  writeReg(0x1E,0x0000);
 }
 
+void setGain2(int value){
+//  gainDAT=int((gain+2)*4095/4) << 4;
+  gainDAT=value;
+  writeReg(0x35,gainDAT); //digital gain
+}
 
-
+void setGain(float value){
+  if (value >= 2 or value <= -2){
+    sprintf(txString,"Gain (%f) must be a number between -2 and 2",value);
+    Serial.println(txString);
+    return;
+  }
+  gain=value;
+  if (gain < 0){
+    gainDAT=int(0x400*abs(gain))<<4|(0x8000);
+  }else{
+    gainDAT=int(0x400*abs(gain))<<4;
+  }
+  writeReg(0x35,gainDAT); //digital gain
+}
 // /////////////////////////////////////////////
 // ---------------------------------------------
 // SPI functions
@@ -201,17 +222,55 @@ void LED_blink(int len, int times ) { // Used for blinking LED  times at interva
 // /////////////////////////////////////////////
 void parse( String rxValue){
 	  //Start new data files if START is received and stop current data files if STOP is received
-  if (rxValue.indexOf("START") != -1) { 
-	run();
-	trigger();
-  } else if (rxValue.indexOf("STOP") != -1) {
-	stop_trigger();
+  if (rxValue.indexOf("START") != -1 or rxValue.indexOf("start") != -1) { 
+	  run();
+	  trigger();
+    
+  } else if (rxValue.indexOf("STOP") != -1 or rxValue.indexOf("stop") != -1 ) {
+	  stop_trigger();
+   
   } else if (rxValue.indexOf("TRIGGER") != -1) {
-	trigger();
+	  trigger();
 	
   } else if (rxValue.indexOf("SETFREQ") != -1) {
-	Serial.println("Setting new frequency value! ")
-
+	  Serial.println("Setting new frequency value! ");
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+      freq=rxValue.substring(index+1,index2).toInt();
+      configureSineWave();
+      sprintf(txString,"New frequency is: %d",freq );
+      Serial.println(txString);
+    } else {
+      sprintf(txString,"Frequency can not be parsed from string '%s''",rxValue);
+      Serial.println(txString);
+    }
+  } else if (rxValue.indexOf("SETGAIN2") != -1) {
+    Serial.println("Setting new digital gain value! ");
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+      rxValue.substring(index+1,index2).toCharArray(datStr ,index2-index+1);
+      setGain2(strtoul (datStr, NULL, 16));
+      Serial.println(datStr);
+      sprintf(txString,"New gain tuning word is: %04X",gainDAT );
+      Serial.println(txString);
+    } else {
+      sprintf(txString,"Gain can not be parsed from string '%s''",rxValue);
+      Serial.println(txString);
+    }  
+  } else if (rxValue.indexOf("SETGAIN") != -1) {
+    Serial.println("Setting new digital gain value! ");
+    int index = rxValue.indexOf(":");
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+      setGain(rxValue.substring(index+1,index2).toFloat());
+      sprintf(txString,"New gain is:%f, and gain tuning word is: %04X",gain,gainDAT );
+      Serial.println(txString);
+    } else {
+      sprintf(txString,"Gain can not be parsed from string '%s''",rxValue);
+      Serial.println(txString);
+    }
    // Read register 	
   } else if (rxValue.charAt(0)== 'R' and rxValue.charAt(5)== 'R') {
 
