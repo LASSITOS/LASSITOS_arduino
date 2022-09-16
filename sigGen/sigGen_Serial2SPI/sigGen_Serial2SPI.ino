@@ -1,4 +1,4 @@
-/*
+;/*
   Getting data from u-blox GNSS module and from LDS70A Laser altimeter and saving them to SD card.
   By: AcCapelli
   Date: August 18th, 2022
