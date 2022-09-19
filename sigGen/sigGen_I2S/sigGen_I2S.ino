@@ -1,17 +1,26 @@
 /*
 
 
- This example generates a square wave based tone at a specified frequency
- and sample rate. Then outputs the data using the I2S interface to a
- MAX98357 I2S Amp Breakout board.
+ This example generates a sinus waves (and other periodic waveforms) based tone at a specified frequency
+ and sample rate. Then outputs the data using the I2S interface to a MA12070P Breakout board.
  Circuit:
-   * Arduino Zero, MKR family and Nano 33 IoT
-   * MAX98357:
-   * GND connected GND
-   * VIN connected 5V
-   * LRC connected to pin 0 (Zero) or 3 (MKR) or A2 (Nano)
-   * BCLK connected to pin 1 (Zero) or 2 (MKR) or A3 (Nano)
-   * DIN connected to pin 9 (Zero) or A6 (MKR) or 4 (Nano)
+   * MA12070P  :  ESP32
+   * -------------------
+   * I2S:
+   * ---------------
+   * BKLC  : 12   # I2S bit clock.  sckPin or constant PIN_I2S_SCK in ESP32 library 
+   * WS    : 27      # I2S word clock. fsPin or constant PIN_I2S_FS ESP32 library 
+   * GND   : GND
+   * SDO   : 33      # I2S audio data
+   * MCLK  : 26      # I2S master clock
+   * 
+   * I2C:
+   * ---------------
+   * SCL   :  SCL 22   #I2C clock,  need pull up resistor (e.g 10k)
+   * SDA   :  SDA 23   # I2C data,  need pull up resistor  (e.g 10k)
+   * GND   :  GND
+   * EN    :  32      # enable or disable the amplifier   ENABLE = 1 -> disabled. On board pulled to GND
+   * MUTE  :  14      # mute or unmute the amplifier   /MUTE = 0 -> mute.  On board pulled to VDD 
   
   By: AcCapelli
   Date: September 15th, 2022
@@ -23,18 +32,18 @@
  */
 
 
+// --------------------------------
+// Settings I2S
+//---------------------------------
+#define PIN_I2S_SCK 12
 
+#define PIN_I2S_FS 27
 
-
-#define PIN_I2S_SCK 14
-
-#define PIN_I2S_FS 25
-
-#define PIN_I2S_SD 26
+#define PIN_I2S_SD 33
 
 #define PIN_I2S_SD_OUT 26
 
-#define PIN_I2S_SD_IN 35
+//#define PIN_I2S_SD_IN 35
 
 //#include <driver/i2s.h> // or  
 #include <I2S.h>
@@ -52,6 +61,21 @@
 #define WAV_SIZE      256    // The size of each generated waveform.  The larger the size the higher
                              // quality the signal.  A size of 256 is more than enough for these simple
                              // waveforms.
+
+
+// --------------------------------
+// Settings I2C
+//---------------------------------
+
+#include <I2C.h>
+#define  I2C_address 0x20
+
+#define PIN_EN 32
+#define PIN_MUTE 14
+
+// --------------------------------
+// Settings Function generation
+//---------------------------------
 
 
 // Define the frequency of music notes (from http://www.phy.mtu.edu/~suits/notefreqs.html):
@@ -72,10 +96,20 @@ int32_t sawtooth[WAV_SIZE] = {0};
 int32_t triangle[WAV_SIZE] = {0};
 int32_t square[WAV_SIZE]   = {0};
 
-// Create I2S audio transmitter object.
-Adafruit_ZeroI2S i2s;
 
-#define Serial Serial
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void generateSine(int32_t amplitude, int32_t* buffer, uint16_t length) {
   // Generate a sine wave signal with the provided amplitude and store it in
@@ -133,22 +167,25 @@ void playWave(int32_t* buffer, uint16_t length, float frequency, float seconds) 
     // Duplicate the sample so it's sent to both the left and right channel.
     // It appears the order is right channel, left channel if you want to write
     // stereo sound.
-    i2s.write(sample, sample);
+    I2S.write(sample, sample);
   }
 }
 
 void setup() {
   // Configure serial port.
   Serial.begin(115200);
-  Serial.println("Zero I2S Audio Tone Generator");
+  Serial.println("ESP32 I2S Audio Tone Generator");
 
   // Initialize the I2S transmitter.
-  if (!i2s.begin(I2S_32_BIT, SAMPLERATE_HZ,BITS_SAMPLE)) {
+  if (!I2S.begin(I2S_PHILIPS_MODE, SAMPLERATE_HZ,BITS_SAMPLE)) {
     Serial.println("Failed to initialize I2S transmitter!");
     while (1);
   }
-  i2s.enableTx();
-
+  I2S.enableTx();
+	
+  // Initialize the I2S transmitter.	
+	
+	
   // Generate waveforms.
   generateSine(AMPLITUDE, sine, WAV_SIZE);
   generateSawtooth(AMPLITUDE, sawtooth, WAV_SIZE);

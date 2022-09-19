@@ -1,4 +1,4 @@
-;/*
+/*
   Getting data from u-blox GNSS module and from LDS70A Laser altimeter and saving them to SD card.
   By: AcCapelli
   Date: August 18th, 2022
@@ -11,13 +11,12 @@
   Hardware Connections:
 
   Connect the ClickBoard to the following pins (using V_SPI):
-   * SD Card | ESP32
-   *    CS       CS0   GPIO5
-   *    CMD      MOSI  GPIO32  ! GPIO 23 is used by I2C port to GNSS! Use other PIN
-   *    VDD      3.3V
-   *    CLK      SCK   GPIO18
-   *    GND      GND
-   *    D0       MISO  GPIO19
+   * ClickBoard | ESP32
+   SCK  18
+   MISO  19
+   MOSI  32
+   CS  5
+   TRG  27 
   
   BLE:
   Set up BLE connections with UART communication
@@ -357,8 +356,8 @@ void loop(){
       Serial.print("Received Value: ");
       for (int i = 0; i < rxValue.length(); i++)
         Serial.print(rxValue[i]);
-      Serial.println();
-	  parse(rxValue);
+        Serial.println();
+	      parse(rxValue);
       
       Serial.println("*********");
       }
