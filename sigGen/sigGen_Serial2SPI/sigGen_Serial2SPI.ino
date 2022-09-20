@@ -16,7 +16,7 @@
    MISO  19
    MOSI  32
    CS  5
-   TRG  27 
+   TRG  21 
   
   BLE:
   Set up BLE connections with UART communication
@@ -36,10 +36,10 @@ int statLED = 13;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #define SCK  18
 #define MISO  19
-#define MOSI  32
+#define MOSI  16
 #define CS  5
 #define SPI_rate 10000000
-#define triggerGPIO 27         
+#define triggerGPIO 21         
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
