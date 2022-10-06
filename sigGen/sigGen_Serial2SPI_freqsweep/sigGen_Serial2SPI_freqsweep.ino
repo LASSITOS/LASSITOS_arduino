@@ -32,7 +32,7 @@ long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox 
 
 int statLED = 13;
 
-// settings SD
+// settings SPI
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #define SCK  18
 #define MISO  19
@@ -52,10 +52,10 @@ char datStr[19];
 uint32_t msg;
 uint16_t out;
 
+
 char txString2[50];
 char txString[500];   // String containing messages to be send to BLE terminal
-char subString[20];
-
+char subString[20];																			  			   
 
 // Sinus function variables
 //-=-=-=-=-=-=-=-=-=-=-=-
@@ -66,9 +66,14 @@ uint16_t freqAdd;
 uint64_t freq=3000;
 uint16_t freqDat;
 float gain=0;
-uint16_t gainDAT = 0x0800;
+uint16_t gainDAT = 0x1000;
 
+// Define a C-major scale to play all the notes up and down.
+uint64_t freqList[] = { 100,200,300,400,500,600,700,800,900,1000,1500,2000,2500,3000,4000,5000,6000,7000,8000,9000 };
+uint64_t freqList2[] = { 100,250,500,750,1000,2000,2500,4000,5000,6000,7000,8000,9000 };
 
+uint16_t gainList[] = {0x2000,0x1400,0x1200,0x1000,0x0800 ,0x0400 ,0x0200 ,0x0100 };
+//-=-=-=-=-=-=-=-=-=-=-=-
 //-=-=-=-=-=-=-=-=-=-=-=-
 // Settings for BLE connection
 #include <BLEDevice.h>
@@ -117,13 +122,19 @@ void configureSineWave(){
 //  Serial.print("freqLSB");
 //  Serial.println(freqLSB,BIN);      
 //  program()
-  writeReg(0x27,0x0031);  //Sinewave Mode
+  
+  writeReg(0x27,0x0031);  //Sinewave Mode channel 1
+//  writeReg(0x27,0x3131);  //Sinewave Mode, channel 1 and 2
+  writeReg(0x26,0x0031);  //Sinewave Mode channel 3
+//  
   writeReg(0x45,0x0000); //Static phase/freq
   writeReg(0x3E,freqMSB); //Freq MSB
   writeReg(0x3F,freqLSB); //Freq LSB
 
 //  gainDAT=int((gain+2)*4095/4) << 4;
-  writeReg(0x35,gainDAT); //digital gain
+  writeReg(0x35,gainDAT); //digital gain Ch1
+  writeReg(0x34,gainDAT); //digital gain Ch2
+  writeReg(0x33,gainDAT); //digital gain Ch3
 }
 
 void run(){
@@ -158,7 +169,9 @@ void stop_trigger(){
 void setGain2(int value){
 //  gainDAT=int((gain+2)*4095/4) << 4;
   gainDAT=value;
-  writeReg(0x35,gainDAT); //digital gain
+  writeReg(0x35,gainDAT); //digital gain ch1
+  writeReg(0x34,gainDAT); //digital gain Ch2
+  writeReg(0x33,gainDAT); //digital gain Ch3
 }
 
 void setGain(float value){
@@ -247,9 +260,63 @@ void LED_blink(int len, int times ) { // Used for blinking LED  times at interva
 void parse( String rxValue){
 	  //Start new data files if START is received and stop current data files if STOP is received
   if (rxValue.indexOf("START") != -1 or rxValue.indexOf("start") != -1) { 
-	  run();
-	  trigger();
+    run();
+    trigger();
     
+  } else if (rxValue.indexOf("S2") != -1 or rxValue.indexOf("sweep2") != -1) { 
+    delay(500);
+    strcpy(txString,"Start sweep");
+    Send_tx_String(txString) ;
+    delay(500);
+   
+	  for (int j=0; j<sizeof(gainList)/sizeof(uint16_t); ++j) {
+		  strcpy(txString,"New gain");
+//		  sprintf(txString,"New gain is: %04X",gainList[j] );
+      strcpy(txString,"Changing gain" );
+		  Send_tx_String(txString); 
+		  gainDAT=gainList[j];
+		  delay(500);
+		  for (int i=0; i<sizeof(freqList2)/sizeof(uint64_t); ++i) {
+			  // Play the note for a quarter of a second.
+			  freq=freqList2[i];
+			  configureSineWave();
+			  sprintf(txString,"New frequency is: %d ",freq );
+			  Send_tx_String(txString); 
+			  run();
+			  trigger();
+			  delay(1000);
+			  // Pause for a tenth of a second between notes.
+			  stop_trigger();
+			  delay(200);
+			  
+			}
+	  }
+	  strcpy(txString,"End of sweep");
+	  Send_tx_String(txString); 
+	  
+  } else if (rxValue.indexOf("SWEEP") != -1 or rxValue.indexOf("sweep") != -1) { 
+	  delay(500);
+	  strcpy(txString,"Start sweep");
+	  Send_tx_String(txString) ;
+	  delay(500);
+	  for (int i=0; i<sizeof(freqList)/sizeof(uint64_t); ++i) {
+		  // Play the note for a quarter of a second.
+		  freq=freqList[i];
+		  configureSineWave();
+		  sprintf(txString,"New frequency is: %d",freq );
+		  Send_tx_String(txString); 
+		  run();
+		  trigger();
+		  delay(1000);
+		  // Pause for a tenth of a second between notes.
+		  stop_trigger();
+		  delay(200);
+      
+	  }
+	  strcpy(txString,"End of sweep");
+	  Send_tx_String(txString) ;
+	  
+      
   } else if (rxValue.indexOf("STOP") != -1 or rxValue.indexOf("stop") != -1 ) {
 	  stop_trigger();
    
@@ -426,11 +493,8 @@ void Send_tx_String(char *txString){
       pTxCharacteristic->notify();
       BLE_message=false;
     }
-
     strcpy(txString,"");
   }
-
-
 
 
 
@@ -461,9 +525,7 @@ void setup(){
     pinMode(triggerGPIO, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
     digitalWrite(triggerGPIO, HIGH);
 
-
-
-	setup_BLE();
+	setup_BLE();		 
 
     // setup AD9106
     delay(100);
@@ -475,29 +537,27 @@ void setup(){
 void loop(){
   
  
-	if (Serial.available()){ // Check Serial inputs
-		String rxValue = Serial.readString();
-		if (rxValue.length() > 0) {
-		  Serial.println("*********");
-		  Serial.print("Received Value: ");
-		  for (int i = 0; i < rxValue.length(); i++)
-			 Serial.print(rxValue[i]);
-		  Serial.println();
-		  parse(rxValue);
-		  
-		  Serial.println("*********");
-		  }
-	}  
+  if (Serial.available()){ // Check Serial inputs
+    String rxValue = Serial.readString();
+    if (rxValue.length() > 0) {
+      Serial.println("*********");
+      Serial.print("Received Value: ");
+      for (int i = 0; i < rxValue.length(); i++)
+        Serial.print(rxValue[i]);
+        Serial.println();
+	      parse(rxValue);
+      
+      Serial.println("*********");
+      }
+  }  
   
 
-    // Check BLE connection
+	// Check BLE connection
 	if (deviceConnected && BLE_message ) {
 		pTxCharacteristic->setValue(txString);
 		pTxCharacteristic->notify();
 		BLE_message=false;
 		//delay(10); // bluetooth stack will go into congestion, if too many packets are sent
-	}
-	
-	
-	delay(50);
+	}					   
+  delay(50);
 }

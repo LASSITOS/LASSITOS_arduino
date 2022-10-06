@@ -60,16 +60,13 @@ void loop ()
 {
 // wait for interrupt
 }
-void write_I2C (bool dB)
-{
-I2c.begin();
-if( dB == true )
-{
-I2c.write(0x20,0x25,0x30); //audio_in_mode = 1
-}
-else
-{
-I2c.write(0x20,0x25,0x10); //audio_in_mode = 0
-}
-I2c.end();
+void write_I2C (bool dB){
+	I2c.begin();
+	if( dB == true ){
+		I2c.write(0x20,0x25,0x30); //audio_in_mode = 1
+	}
+	else	{
+		I2c.write(0x20,0x25,0x10); //audio_in_mode = 0
+	}
+	I2c.end();
 }

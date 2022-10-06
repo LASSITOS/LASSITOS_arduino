@@ -14,13 +14,7 @@
    * SDO   : 33      # I2S audio data
    * MCLK  : 26      # I2S master clock. May be that not every PIN can generate clock.
    * 
-   * I2C:
-   * ---------------
-   * SCL   :  SCL 22   #I2C clock,  need pull up resistor (e.g 10k)
-   * SDA   :  SDA 23   # I2C data,  need pull up resistor  (e.g 10k)
-   * GND   :  GND
-   * EN    :  32      # enable or disable the amplifier   ENABLE = 1 -> disabled. On board pulled to GND
-   * MUTE  :  14      # mute or unmute the amplifier   /MUTE = 0 -> mute.  On board pulled to VDD 
+
               
   By: AcCapelli
   Date: September 15th, 2022
@@ -47,57 +41,37 @@
 
 //#define PIN_I2S_SD_IN 35
 
-//#include <driver/i2s.h> // or  
-#include <I2S.h>
+#include <driver/i2s.h> // or  
+// #include <I2S.h>
 
 
 
 #define SAMPLERATE_HZ 16000  // The sample rate of the audio.  ??ESP32 max 16kHz??
-                             
-#define BITS_SAMPLE   16     // The number of bits per sample. ??ESP32 max 16??
-
-
-
 #define WAV_SIZE      1024    // The size of each generated waveform.  The larger the size the higher
                              // quality the signal.  A size of 256 is more than enough for these simple
                              // waveforms.
 
+//const i2s_port_t I2S_PORT = I2S_NUM_0;
+const i2s_port_t I2S_PORT = I2S_NUM_0;  //=0;
 
-// --------------------------------
-// Settings I2C
-//---------------------------------
 
-#include <I2C.h>
-#define  I2C_address 0x20
-
-#define PIN_EN 32
-#define PIN_MUTE 14
 
 // --------------------------------
 // Settings Function generation
 //---------------------------------
-
-
-// Define the frequency of music notes (from http://www.phy.mtu.edu/~suits/notefreqs.html):
-#define C4_HZ      261.63
-#define D4_HZ      293.66
-#define E4_HZ      329.63
-#define F4_HZ      349.23
-#define G4_HZ      392.00
-#define A4_HZ      440.00
-#define B4_HZ      493.88
+#define BITS_SAMPLE 32
 
 // Define a C-major scale to play all the notes up and down.
-float scale[] = { C4_HZ, D4_HZ, E4_HZ, F4_HZ, G4_HZ, A4_HZ, B4_HZ, A4_HZ, G4_HZ, F4_HZ, E4_HZ, D4_HZ, C4_HZ };
+uint64_t freqList[] = { 100,200,300,400,500,600,700,800,900,1000,1500,2000,2500,3000,4000,5000,6000,7000,8000,9000 };
 
-unsigned int AMPLITUDE     ((1<<4)-1)   // Set the amplitude of generated waveforms.  This controls how loud
+unsigned int AMPLITUDE=((1<<8)-1);   // Set the amplitude of generated waveforms.  This controls how loud
                              // the signals are, and can be any value from 0 to 2**BITS_SAMPLE - 1.  Start with
                              // a low value to prevent damaging speakers!
 							 
-unsigned int FREQ 4000 			// Frequency of waveform in Hz
+unsigned int FREQ=500; 			// Frequency of waveform in Hz
 
 
-unsigned int TIME_LENGTH  20	//  Time of waveform generation in seconds
+unsigned int TIME_LENGTH=20;	//  Time of waveform generation in seconds
 
 // Store basic waveforms in memory.
 int32_t sine[WAV_SIZE]     = {0};
@@ -106,11 +80,47 @@ int32_t triangle[WAV_SIZE] = {0};
 int32_t square[WAV_SIZE]   = {0};
 
 
+char txString2[50];
+char txString[500];   // String containing messages to be send to BLE terminal
+char subString[20];    
 
 
+void i2sInit(){
+  esp_err_t err;
+// The I2S config as per the example
+  const i2s_config_t i2s_config = {
+      .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_TX), // transfer
+      .sample_rate = SAMPLERATE_HZ,                         // 16KHz
+      .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT, // could only get it to work with 32bits
+      .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT, // use right channel
+      .communication_format = i2s_comm_format_t(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
+      .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,     // Interrupt level 1
+      .dma_buf_count = 4,                           // number of buffers
+      .dma_buf_len = 8                              // 8 samples per buffer (minimum)
+  };
 
-
-
+  // The pin config as per the setup
+  const i2s_pin_config_t pin_config = {
+      .bck_io_num = PIN_I2S_SCK,   // Serial Clock (SCK)
+      .ws_io_num = PIN_I2S_WS,    // Word Select (WS)
+      .data_out_num = PIN_I2S_SD, // Serial Data (SD)n
+      .data_in_num = I2S_PIN_NO_CHANGE   // ot used (only for microphone)
+  };
+  
+  // Configuring the I2S driver and pins.
+  // This function must be called before any I2S driver read/write operations.
+  err = i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+  if (err != ESP_OK) {
+    Serial.printf("Failed installing driver: %d\n", err);
+    while (true);
+  }
+  err = i2s_set_pin(I2S_PORT, &pin_config);
+  if (err != ESP_OK) {
+    Serial.printf("Failed setting pin: %d\n", err);
+    while (true);
+  }
+  Serial.println("I2S driver installed.");
+}
 
 
 
@@ -121,13 +131,6 @@ int32_t square[WAV_SIZE]   = {0};
 // Function generation
 //---------------------------------
 
-void generateSine(int32_t amplitude, int32_t* buffer, uint16_t length) {
-  // Generate a sine wave signal with the provided amplitude and store it in
-  // the provided buffer of size length.
-  for (int i=0; i<length; ++i) {
-    buffer[i] = int32_t(float(amplitude)*sin(2.0*PI*(1.0/length)*i));
-  }
-}
 void generateSawtooth(int32_t amplitude, int32_t* buffer, uint16_t length) {
   // Generate a sawtooth signal that goes from -amplitude/2 to amplitude/2
   // and store it in the provided buffer of size length.
@@ -160,12 +163,49 @@ void generateSquare(int32_t amplitude, int32_t* buffer, uint16_t length) {
   }
 }
 
+void generateSine(int32_t amplitude, int32_t* buffer, uint16_t length) {
+  // Generate a sine wave signal with the provided amplitude and store it in
+  // the provided buffer of size length.
+  for (int i=0; i<length; ++i) {
+    buffer[i] = int32_t(float(amplitude)*sin(2.0*PI*(1.0/length)*i));
+  }
+}
+
 void playWave(int32_t* buffer, uint16_t length, float frequency, float seconds) {
+  // Play back the provided waveform buffer for the specified
+  // // amount of seconds.
+  
+  // set clock
+  ESP_LOGI(TAG, "set clock");
+    i2s_set_clk(I2S_PORT, SAMPLERATE_HZ, BITS_SAMPLE, I2S_CHANNEL_MONO);
+    
+	
+	//Using push
+    // for(i = 0; i < SAMPLE_PER_CYCLE; i++) {
+    //     if (bits == 16)
+    //         i2s_push_sample(0, &samples_data[i], 100);
+    //     else
+    //         i2s_push_sample(0, &samples_data[i*2], 100);
+    // }
+    // or write
+	uint32_t iterations = seconds*SAMPLERATE_HZ;
+	size_t i2s_bytes_write = 0;
+	float delta = (frequency*length)/float(SAMPLERATE_HZ);
+	for (uint32_t i=0; i<iterations; ++i) {
+		uint16_t pos = uint32_t(i*delta) % length;
+		int32_t sample = buffer[pos];
+		ESP_LOGI(TAG, "write data");
+		i2s_write(I2S_PORT, &sample, BITS_SAMPLE, &i2s_bytes_write, 100);
+  }
+}
+
+void playWave_old(int32_t* buffer, uint16_t length, float frequency, float seconds) {
   // Play back the provided waveform buffer for the specified
   // amount of seconds.
   // First calculate how many samples need to play back to run
   // for the desired amount of seconds.
   uint32_t iterations = seconds*SAMPLERATE_HZ;
+  size_t i2s_bytes_write = 0;
   // Then calculate the 'speed' at which we move through the wave
   // buffer based on the frequency of the tone being played.
   float delta = (frequency*length)/float(SAMPLERATE_HZ);
@@ -177,43 +217,10 @@ void playWave(int32_t* buffer, uint16_t length, float frequency, float seconds) 
     // Duplicate the sample so it's sent to both the left and right channel.
     // It appears the order is right channel, left channel if you want to write
     // stereo sound.
-    I2S.write(sample, sample);
+    i2s_write(I2S_PORT, &sample, BITS_SAMPLE, &i2s_bytes_write, 50);
+
   }
 }
-
-
-  // Serial.println("Sine wave");
-  // for (int i=0; i<sizeof(scale)/sizeof(float); ++i) {
-    // // Play the note for a quarter of a second.
-    // playWave(sine, WAV_SIZE, scale[i], 0.25);
-    // // Pause for a tenth of a second between notes.
-    // delay(100);
-  // }
-  // Serial.println("Sawtooth wave");
-  // for (int i=0; i<sizeof(scale)/sizeof(float); ++i) {
-    // // Play the note for a quarter of a second.
-    // playWave(sawtooth, WAV_SIZE, scale[i], 0.25);
-    // // Pause for a tenth of a second between notes.
-    // delay(100);
-  // }
-  // Serial.println("Triangle wave");
-  // for (int i=0; i<sizeof(scale)/sizeof(float); ++i) {
-    // // Play the note for a quarter of a second.
-    // playWave(triangle, WAV_SIZE, scale[i], 0.25);
-    // // Pause for a tenth of a second between notes.
-    // delay(100);
-  // }
-  // Serial.println("Square wave");
-  // for (int i=0; i<sizeof(scale)/sizeof(float); ++i) {
-    // // Play the note for a quarter of a second.
-    // playWave(square, WAV_SIZE, scale[i], 0.25);
-    // // Pause for a tenth of a second between notes.
-    // delay(100);
-  // }
-
-
-
-
 
  
 // /////////////////////////////////////////////
@@ -224,9 +231,7 @@ void playWave(int32_t* buffer, uint16_t length, float frequency, float seconds) 
 void parse( String rxValue){
 	  //Start new data files if START is received and stop current data files if STOP is received
   if (rxValue.indexOf("START") != -1 or rxValue.indexOf("start") != -1) { 
-	  playWave(sine, WAV_SIZE, FREQ, TIME_LENGTH)
-    
-  } else if (rxValue.indexOf("STOP") != -1 or rxValue.indexOf("stop") != -1 ) {
+	  playWave(sine, WAV_SIZE, FREQ, TIME_LENGTH);
 	  
 	
   } else if (rxValue.indexOf("SETFREQ") != -1) {
@@ -234,7 +239,7 @@ void parse( String rxValue){
     int index = rxValue.indexOf(":");\
     int index2 = rxValue.indexOf(":",index+1);
     if (index !=-1 and index2 !=-1){
-      FREQ=rxValue.substring(index+1,index2).toInt());
+      FREQ=rxValue.substring(index+1,index2).toInt();
       sprintf(txString,"New frequency is: %d Hz",FREQ );
       Serial.println(txString);
     } else {
@@ -247,8 +252,8 @@ void parse( String rxValue){
     int index = rxValue.indexOf(":");
     int index2 = rxValue.indexOf(":",index+1);
     if (index !=-1 and index2 !=-1){
-      AMPLITUDE=rxValue.substring(index+1,index2).toInt());
-	  generateSine(AMPLITUDE, sine, WAV_SIZE);
+      AMPLITUDE=rxValue.substring(index+1,index2).toInt();
+	    generateSine(AMPLITUDE, sine, WAV_SIZE);
       sprintf(txString,"New gain is:%f, and gain tuning word is: %04X",AMPLITUDE,AMPLITUDE );
       Serial.println(txString);
     } else {
@@ -261,7 +266,7 @@ void parse( String rxValue){
     int index = rxValue.indexOf(":");\
     int index2 = rxValue.indexOf(":",index+1);
     if (index !=-1 and index2 !=-1){
-      TIME_LENGTH=rxValue.substring(index+1,index2).toInt());
+      TIME_LENGTH=rxValue.substring(index+1,index2).toInt();
       sprintf(txString,"New frequency is: %d Hz",TIME_LENGTH );
       Serial.println(txString);
     } else {
@@ -283,22 +288,17 @@ void parse( String rxValue){
 
 
 
-
-
-
-
 void setup() {
   // Configure serial port.
   Serial.begin(115200);
   Serial.println("ESP32 I2S Audio Tone Generator");
 
   // Initialize the I2S transmitter.
-  if (!I2S.begin(I2S_PHILIPS_MODE, SAMPLERATE_HZ,BITS_SAMPLE)) {
-    Serial.println("Failed to initialize I2S transmitter!");
-    while (1);
-  }
-  I2S.enableTx();
-	
+  i2sInit();
+    
+
+
+  
   // Initialize the I2C transmitter.	
 	
 	
@@ -326,5 +326,5 @@ void loop() {
       }
   }
   
-  delay(50)
+  delay(50);
 }
