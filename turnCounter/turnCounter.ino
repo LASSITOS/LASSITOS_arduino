@@ -29,6 +29,9 @@ bool BLE_start=false;  // Start datalogger over BLE
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
+//#define SERVICE_UUID           "1448079E-7F48-4029-ADBB-637450A7AEF2" // UART service UUID
+//#define CHARACTERISTIC_UUID_RX "1448079E-7F48-4029-ADBB-637450A7AEF2"
+//#define CHARACTERISTIC_UUID_TX "1448079E-7F48-4029-ADBB-637450A7AEF2"
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E" // UART service UUID
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -99,7 +102,7 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 void setup_BLE() {
   Serial.println("bluetooth connection: 'ESP32 BLE UART' ");
   // Create the BLE Device
-  BLEDevice::init("ESP32 BLE UART");
+  BLEDevice::init("ESP32 BLE turnCounter");
 
   // Create the BLE Server
   pServer = BLEDevice::createServer();
@@ -173,8 +176,9 @@ void loop() {
     Serial.println(count); 
     timer = millis(); //Update the timer
     if (deviceConnected) {
-      sprintf(subString,"turns: %d\n",count);
-      strcat(txString,subString);
+      sprintf(subString,"turns: %i \n",count);
+//      sprintf(subString,"%i",count);
+      strcpy(txString,subString);
       pTxCharacteristic->setValue(txString);
       pTxCharacteristic->notify();
       BLE_message=false;

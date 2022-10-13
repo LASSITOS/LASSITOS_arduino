@@ -991,7 +991,7 @@ void  check_laser(){
   Send_tx_String(txString);
 }
 
-// Get Laser data for 1 second and send it over BLE and serial
+// Print commands
 void  commands(){  
    Send_tx_String(txString);
    strcpy(txString,"");
