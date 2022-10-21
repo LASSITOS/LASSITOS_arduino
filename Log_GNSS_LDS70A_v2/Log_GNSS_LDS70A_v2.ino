@@ -85,7 +85,7 @@ int PIN_Tx = 17; // 17 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define baudrateRS232 115200 
 
-#define Laser_BufferSize 1024 // Allocate 512Bytes of RAM for UART serial storage
+#define Laser_BufferSize 1024 // Allocate 1024 Bytes of RAM for UART serial storage
 #define flush_intervall 30000
 #define Laser_log_intervall 2000
 int bitesToWrite;

@@ -428,7 +428,7 @@ def check_data(data):
         ax2.set_ylabel('GNSS Delta_h (m)')
         ax.set_xlabel('time (ms)')
     
-        ax.plot(data.Laser.iTOW2-data.PVAT.iTOW[0],data.Laser.h,'--xk',label='Laser')
+        ax.plot(data.Laser.iTOW-data.PVAT.iTOW[0],data.Laser.h,'--xk',label='Laser')
         # ax.plot(data.Laser.iTOW2-data.PVAT.iTOW[0],data.Laser.h,'--ob',label='Laser, time2')
         ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0]),data.PVAT.height/1000-(data.PVAT.height[0]/1000-data.Laser.h[0]),'+:r',label='GPS height')
         
