@@ -100,7 +100,7 @@ class UBX2data:
                 cleanFromLaser(filepath)
                 filepath=self.file_original[:-4]+'_GNSS.ubx'
                 filelaser=self.file_original[:-4]+'_Laser.dat'
-            if clean:
+            elif clean:
                 if (not os.path.isfile(filepath[:-4]+'_GNSS.ubx') or not os.path.isfile(filepath[:-4]+'_Laser.dat') ):
                     cleanFromLaser(filepath)
                     print('Cleaned .ubs file!')
@@ -301,22 +301,44 @@ def read_Laser(path,rate=5):
     j=0
     t=0
     lon=False
+    firstline=True
+    onlyD=False
     for l in file:
         if l[0]=='D' and lon:
-            try:
+        
+            if firstline:
                 a=l.split()
-                h.append(float(a[1]))
-                signQ.append(float(a[2]))
-                T.append(float(a[3])  )
-                iTOW.append(0) 
-                iTOW2.append(i*1000/rate)
-            except:
-                h.append(-999)
-                signQ.append(-999)
-                T.append(-999  )
-                iTOW.append(0) 
-                iTOW2.append(i*1000/rate)
-                print('coud not parse string:', l)
+                if len(a)==2:
+                    onlyD=True  # Laser data have only distance column. Temperature andsignal quality are missing!
+                else:
+                    onlyD=False
+                    
+            if onlyD:
+                try:
+                    a=l.split()
+                    h.append(float(a[1]))
+                    iTOW.append(0) 
+                    iTOW2.append(i*1000/rate)
+                except:
+                    h.append(-999)
+                    iTOW.append(0) 
+                    iTOW2.append(i*1000/rate)
+                    print('coud not parse string:', l)
+            else:      
+                try:
+                    a=l.split()
+                    h.append(float(a[1]))
+                    signQ.append(float(a[2]))
+                    T.append(float(a[3])  )
+                    iTOW.append(0) 
+                    iTOW2.append(i*1000/rate)
+                except:
+                    h.append(-999)
+                    signQ.append(-999)
+                    T.append(-999  )
+                    iTOW.append(0) 
+                    iTOW2.append(i*1000/rate)
+                    print('coud not parse string:', l)
             i+=1
             j+=1
         
@@ -341,10 +363,14 @@ def read_Laser(path,rate=5):
     
     h=np.array(h)
     h[h==-999]=np.nan
-    T=np.array(T)
-    T[T==-999]=np.nan
-    signQ=np.array(signQ)
-    signQ[signQ==-999]=np.nan
+    if onlyD:
+        T=np.ones_like(h)*np.nan
+        signQ=np.ones_like(h)*np.nan
+    else:
+        T=np.array(T)
+        T[T==-999]=np.nan
+        signQ=np.array(signQ)
+        signQ[signQ==-999]=np.nan
     return np.array(iTOW),h,signQ,T,t2
     
     
@@ -358,7 +384,7 @@ def check_data(data):
     
     """
     
-    print('\n\n###############################\n-----------------------------',
+    print('\n\n###############################\n-----------------------------\n',
           data.name,
           '\n----------------------------\n###############################\n')
     

@@ -621,13 +621,28 @@ void loop(){
       }
   }  
   
-
+    //################################# Manage BLE #############################################
 	// Check BLE connection
 	if (deviceConnected && BLE_message ) {
 		pTxCharacteristic->setValue(txString);
 		pTxCharacteristic->notify();
 		BLE_message=false;
 		//delay(10); // bluetooth stack will go into congestion, if too many packets are sent
-	}					   
+	}		
+  // disconnecting
+  if (!deviceConnected && oldDeviceConnected) {
+    //delay(500); // give the bluetooth stack the chance to get things ready
+    pServer->startAdvertising(); // restart advertising
+    Serial.println("start advertising");
+    oldDeviceConnected = deviceConnected;
+  }
+  // connecting
+  if (deviceConnected && !oldDeviceConnected) {
+    // do stuff here on connecting
+    oldDeviceConnected = deviceConnected;
+  }	
+  
+  
+  
   delay(50);
 }
