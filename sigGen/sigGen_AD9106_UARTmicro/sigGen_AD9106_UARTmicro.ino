@@ -11,12 +11,19 @@
   Hardware Connections:
 
   Connect the ClickBoard to the following pins (using V_SPI):
-   * ClickBoard | ESP32
+   * ClickBoard | ESP32 micro usb
    SCK  18
    MISO  19
    MOSI  16
    CS  5
    TRG  21 
+
+   * ClickBoard | ESP32 usb-C
+   SCK  23
+   MISO  19
+   MOSI  16
+   CS  18
+   TRG  04 
   
   BLE:
   Set up BLE connections with UART communication
@@ -34,12 +41,12 @@ int statLED = 13;
 
 // settings SPI
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-#define SCK  18
+#define SCK  23
 #define MISO  19
 #define MOSI  16
-#define CS  5
+#define CS  18
 #define SPI_rate 10000000
-#define triggerGPIO 21         
+#define triggerGPIO 04        
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
