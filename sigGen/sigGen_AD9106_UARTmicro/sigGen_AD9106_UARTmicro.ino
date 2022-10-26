@@ -11,12 +11,19 @@
   Hardware Connections:
 
   Connect the ClickBoard to the following pins (using V_SPI):
-   * ClickBoard | ESP32
+   * ClickBoard | ESP32 micro usb
    SCK  18
    MISO  19
    MOSI  16
    CS  5
    TRG  21 
+
+   * ClickBoard | ESP32 usb-C
+   SCK  23
+   MISO  19
+   MOSI  16
+   CS  18
+   TRG  04 
   
   BLE:
   Set up BLE connections with UART communication
@@ -34,12 +41,12 @@ int statLED = 13;
 
 // settings SPI
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-#define SCK  18
+#define SCK  23
 #define MISO  19
 #define MOSI  16
-#define CS  5
+#define CS  18
 #define SPI_rate 10000000
-#define triggerGPIO 21         
+#define triggerGPIO 04        
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
@@ -97,6 +104,10 @@ uint64_t freqList2[] = { 100,250,500,750,1000,2000,2500,4000,5000,6000,7000,8000
 
 uint16_t gainList[] = {0x2000,0x1400,0x1200,0x1000,0x0800 ,0x0400 ,0x0200 ,0x0100 };
 //-=-=-=-=-=-=-=-=-=-=-=-
+
+
+
+
 //-=-=-=-=-=-=-=-=-=-=-=-
 // Settings for BLE connection
 #include <BLEDevice.h>
@@ -129,7 +140,7 @@ bool BLE_start=false;  // Start datalogger over BLE
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
-void startMicro(float duration){
+void recordMicro(float duration){
 
   UARTmicro.write('N');
   delay(1000);
@@ -140,9 +151,21 @@ void startMicro(float duration){
   UARTmicro.write('S');
   delay(int(1000*duration));  
   UARTmicro.write('T');
-
 }
 
+void startMicro(){
+  UARTmicro.write('N');
+  delay(1000);
+  UARTmicro.write('D');
+  delay(1000);
+  UARTmicro.write('C');
+  delay(2000);
+  UARTmicro.write('S');
+}
+
+void stopMicro(){ 
+  UARTmicro.write('T');
+}
 
 // /////////////////////////////////////////////
 // ---------------------------------------------
@@ -310,8 +333,8 @@ void parse( String rxValue){
     delay(500);
     strcpy(txString,"Start sweep");
     Send_tx_String(txString) ;
-    startMicro(sizeof(gainList)*(sizeof(freqList)*1.2+0.6)+6);  // start recording of ADC data for given duration in seconds
-	delay(200);
+    startMicro();  // start recording of ADC data for given duration in seconds
+	  delay(2000);
    
 	  for (int j=0; j<sizeof(gainList)/sizeof(uint16_t); ++j) {
 		  strcpy(txString,"New gain");
@@ -332,9 +355,9 @@ void parse( String rxValue){
 			  // Pause for a tenth of a second between notes.
 			  stop_trigger();
 			  delay(200);
-			  
 			}
 	  }
+    stopMicro();
 	  strcpy(txString,"End of sweep");
 	  Send_tx_String(txString); 
 	  
@@ -342,7 +365,7 @@ void parse( String rxValue){
 	  delay(500);
 	  strcpy(txString,"Start sweep");
 	  Send_tx_String(txString) ;
-	  startMicro(sizeof(freqList)*1.2+5);   // start recording of ADC data for given duration in seconds
+	  startMicro();   // start recording of ADC data for given duration in seconds
 	  delay(2000);
 	  for (int i=0; i<sizeof(freqList)/sizeof(uint64_t); ++i) {
 		  // Play the note for a quarter of a second.
@@ -358,6 +381,7 @@ void parse( String rxValue){
 		  delay(200);
       
 	  }
+    stopMicro();
 	  strcpy(txString,"End of sweep");
 	  Send_tx_String(txString) ;
 	  
@@ -365,7 +389,11 @@ void parse( String rxValue){
   } else if (rxValue.indexOf("STOP") != -1 or rxValue.indexOf("stop") != -1 ) {
 	  stop_trigger();
   } else if (rxValue.indexOf("RECORD") != -1 or rxValue.indexOf("record") != -1 ) {
-	  startMicro(loggingTime); 
+	  strcpy(txString,"ADC recording started");
+    Send_tx_String(txString) ;
+	  recordMicro(loggingTime); 
+    strcpy(txString,"ADC recording stopped");
+    Send_tx_String(txString) ;
   } else if (rxValue.indexOf("TRIGGER") != -1) {
 	  trigger();
 	
@@ -494,9 +522,9 @@ class MyCallbacks: public BLECharacteristicCallbacks {
 
 
 void setup_BLE() {
-  Serial.println("bluetooth connection: 'ESP32 BLE UART' ");
+  Serial.println("bluetooth connection: 'ESP32 AD9106 controlMicro' ");
   // Create the BLE Device
-  BLEDevice::init("ESP32 BLE UART");
+  BLEDevice::init("ESP32 AD9106 controlMicro");
 
   // Create the BLE Server
   pServer = BLEDevice::createServer();
