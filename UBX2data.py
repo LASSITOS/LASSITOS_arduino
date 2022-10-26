@@ -57,7 +57,10 @@ class MSG_type:
 
                 
 class Laser:
-    def __init__(self,path,rate=5):
+    def __init__(self,path,rate=5,distCenter=0, pitch0=0, roll0=0):
+        self.distCenter=distCenter
+        self.pitch0=pitch0
+        self.roll0=roll0
         self.iTOW,self.h,self.signQ,self.T,self.iTOW2=read_Laser(path,rate=rate)
                
     
@@ -69,7 +72,7 @@ class UBX2data:
     MSG_id_list=['NAV-PVT','NAV-ATT','ESF-MEAS','ESF-INS','ESF-ALG','ESF-STATUS','NAV-PVAT']
     extr_list=['ATT','PVT','INS','PVAT']
     
-    def __init__(self,filepath,name='',Laserrate=5,clean=True,load=True, correct_Laser=True):
+    def __init__(self,filepath,name='',Laserrate=5,clean=True,load=True, correct_Laser=True,distCenter=0, pitch0=0, roll0=0):
         """
             Read GNSS and Laser data from .ubx data file. Additional methods are available for plotting and handling data.    
         
@@ -146,7 +149,7 @@ class UBX2data:
             
             # load laser data
             if self.Laserrate>0:
-                self.Laser=Laser(filelaser,rate=self.Laserrate)
+                self.Laser=Laser(filelaser,rate=self.Laserrate,distCenter=distCenter,pitch0=pitch0, roll0=roll0)
             
                 # correct h with angles from INS
                 if correct_Laser:
@@ -163,7 +166,11 @@ class UBX2data:
             pitch=self.PVAT.vehPitch[j]+(self.PVAT.vehPitch[i]-self.PVAT.vehPitch[j])/(self.PVAT.iTOW[i]-self.PVAT.iTOW[j])*(self.Laser.iTOW-self.PVAT.iTOW[j])
             roll=self.PVAT.vehRoll[j]+(self.PVAT.vehRoll[i]-self.PVAT.vehRoll[j])/(self.PVAT.iTOW[i]-self.PVAT.iTOW[j])*(self.Laser.iTOW-self.PVAT.iTOW[j])
             
-            self.Laser.h_corr=self.Laser.h*(np.cos(pitch/180*np.pi)*np.cos(roll/180*np.pi))
+            roll-=self.Laser.roll0
+            pitch-=self.Laser.pitch0
+            self.Laser.pitch=pitch
+            self.Laser.roll=roll
+            self.Laser.h_corr=self.Laser.h*(np.cos(pitch/180*np.pi)*np.cos(roll/180*np.pi))-self.Laser.distCenter*np.sin(pitch/180*np.pi)
         
         except Exception as e: 
             print(e)
@@ -201,6 +208,20 @@ class UBX2data:
 
 
     def subset(self, timelim=[],timeformat='ms'):
+        """
+        Parameters
+        ----------
+        timelim : List, optional
+            limits in time. The default is [].
+        timeformat : string, optional
+            units of time limits. The default is 'ms'.
+
+        Returns
+        -------
+        data2 : UBX2data object with subset of data into time limits
+            
+
+        """
         for MSG in ['PVAT','PVT']: 
             if  getattr(self,  MSG).len>0:
                  d=getattr(self, MSG)
@@ -620,6 +641,20 @@ def plot_summary(data,extent,cmap=cm.batlow,):
     
     ax3 = fig.add_subplot(spec[7:9, 0])
     plot_att(data,MSG='PVAT',ax=ax3,title='none')
+
+    return fig
+
+def laser_correction(data,cmap=cm.batlow,):
+    
+    fig, [ax2,ax3] = pl.subplots(2, 1, figsize=(8, 8), sharex=True, sharey=False)
+
+    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h, 'x:',label='original')
+    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h_corr, '+:k',label='corrected')
+    ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0])/1000,data.PVAT.height/1000-(data.PVAT.height[0]/1000-data.Laser.h[0]),'+:r',label='GPS height')
+    ax2.set_ylabel('h_laser (m)')
+    ax2.legend()
+
+    plot_att(data,MSG='PVAT',ax=ax3,title='none',heading=False)
 
     return fig
 
