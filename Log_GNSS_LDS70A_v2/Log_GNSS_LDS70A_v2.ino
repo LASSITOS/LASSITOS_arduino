@@ -1085,7 +1085,7 @@ class MyCallbacks: public BLECharacteristicCallbacks {
            check_laser();
         } else if (rxValue.find("CHECKLASER") != -1) {
            check_laser();
-        } else if (rxValue.find("COMS") != -1) {
+        } else if (rxValue.find("COMS") != -1 or rxValue.find("?") != -1) {
            commands();
         } else if (rxValue.find("RATE") != -1) {
            char passValue[40];
@@ -1470,7 +1470,7 @@ void loop(){
         check_attitude( );
       } else if (rxValue.indexOf("CHECKLASER") != -1) {
         check_laser();
-      } else if (rxValue.indexOf("COMS") != -1) {
+      } else if (rxValue.indexOf("COMS") != -1) or rxValue.indexOf("?") != -1)  {
         commands(); 
       }else if (rxValue.indexOf("LOGGPS") != -1) {
            setLogFlag( rxValue, log_GPS, "LOGGPS");
