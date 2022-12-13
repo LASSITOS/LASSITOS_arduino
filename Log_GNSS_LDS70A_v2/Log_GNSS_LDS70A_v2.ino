@@ -98,7 +98,7 @@ bool log_GPS = true;
 
 bool IMUcalibration=false;
 int NavigationFrequency = 5;
-dynModel DynamicModel = (dynModel)4;
+dynModel DynamicModel = (dynModel)7;
 bool log_RMX = false;
 bool log_ESFRAW  = false;
 bool log_ESFMEAS = false;
@@ -110,7 +110,7 @@ bool log_ESFINS = false;
 bool log_STATUS = true;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-#define fileBufferSize 8192 // Allocate 32KBytes of RAM for UBX message storage
+#define fileBufferSize 16384 // Allocate 32KBytes of RAM for UBX message storage
 
 unsigned long lastPrint; // Record when the last Serial print took place
 unsigned long bytesWritten = 0; // Record how many bytes have been written to SD card
@@ -775,10 +775,11 @@ void setDynamicModel( String rxValue){
       sprintf(txString,"New dynamic navigation model: %d",DynamicModel);
       Serial.println(txString);
       IMUcalibration=true;      //New calibration is necessary after changing dynamic model
-//      myGNSS.setDynamicModel(DynamicModel); //Set new Dynamic Model for GNSS solution.
+      myGNSS.setDynamicModel(DynamicModel); //Set new Dynamic Model for GNSS solution.
     } else {
       BLE_message=true;
-      sprintf(txString,"Dynamic model can not be parsed form string '%s'. Valid format is 'DYNMODEL:4:'",rxValue);
+      uint8_t currentDynmodel= myGNSS.getDynamicModel(DynamicModel); //Set new Dynamic Model for GNSS solution.
+      sprintf(txString,"Current dynamic model: %d. Format for changing model:DYNMODEL:4:",currentDynmodel);
       Serial.println(txString);
     }
   } else {
@@ -1243,7 +1244,7 @@ void setup(){
     
     myGNSS.setI2COutput(COM_TYPE_UBX); //Set the I2C port to output UBX only (turn off NMEA noise)
     myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
-    myGNSS.setDynamicModel(DynamicModel);  
+//    myGNSS.setDynamicModel(DynamicModel);  
     myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
     Serial.println(F("Connection to GPS succesful"));
 
@@ -1470,7 +1471,7 @@ void loop(){
         check_attitude( );
       } else if (rxValue.indexOf("CHECKLASER") != -1) {
         check_laser();
-      } else if (rxValue.indexOf("COMS") != -1) or rxValue.indexOf("?") != -1)  {
+      } else if (rxValue.indexOf("COMS") != -1 or rxValue.indexOf("?") != -1)  {
         commands(); 
       }else if (rxValue.indexOf("LOGGPS") != -1) {
            setLogFlag( rxValue, log_GPS, "LOGGPS");
@@ -1492,7 +1493,7 @@ void loop(){
 	
   if (log_STATUS  and (millis() - lastTime_logstatus > 60000)){   
     myGNSS.getESFSTATUS();
-	myGNSS.getESFALG();
+	  myGNSS.getESFALG();
     lastTime_logstatus = millis(); //Update the timer
   }
 
