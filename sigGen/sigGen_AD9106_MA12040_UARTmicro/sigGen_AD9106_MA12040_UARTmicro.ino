@@ -89,8 +89,12 @@ int loggingTime=30;   // duration of data recording
 #include <Wire.h>
 #define  MA12070P_address 0x20
 
-#define PIN_EN 32    // must be =1 at startup
-#define PIN_MUTE 14  // must be =0 at startup
+
+#define  CSwitchTx_address 0x23
+
+
+#define PIN_EN 33    // must be =1 at startup
+#define PIN_MUTE 15  // must be =0 at startup
 
 
 
@@ -724,7 +728,6 @@ void setup(){
 
 
 void loop(){
-  
  
   if (Serial.available()){ // Check Serial inputs
     String rxValue = Serial.readString();
@@ -740,7 +743,7 @@ void loop(){
       }
   }  
   
-    //################################# Manage BLE #############################################
+  //################################# Manage BLE #############################################
 	// Check BLE connection
 	if (deviceConnected && BLE_message ) {
 		pTxCharacteristic->setValue(txString);
@@ -760,7 +763,6 @@ void loop(){
     // do stuff here on connecting
     oldDeviceConnected = deviceConnected;
   }	
-  
   
   
   delay(50);
