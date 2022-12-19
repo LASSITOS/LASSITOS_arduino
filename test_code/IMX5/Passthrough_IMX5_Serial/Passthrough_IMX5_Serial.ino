@@ -28,16 +28,16 @@
 #include <HardwareSerial.h>
 HardwareSerial IMX5(2);
 
-int PIN_Rx = 25; //  Hardware RX pin,
-int PIN_Tx = 26; // Hardware TX pin,
+int PIN_Rx = 16; //  Hardware RX pin,
+int PIN_Tx = 17; // Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-int baudrateIMX5= 921600 ;
+int baudrateIMX5= 115200 ;
 unsigned long lastTime;
 #define sdWriteSize 256 // Write data to the SD card in blocks of 512 bytes
 uint8_t *myBuffer; // A buffer to hold the data while we write it to SD car
 
-const char* asciiMessage = "ASCB,512,,,1000,,,,,,,,,";  // Get PINS1 @ 10Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+const char* asciiMessage = "$ASCB,512,,,100,,,,,,,,,*38";  // Get PINS1 @ 10Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 
 void setup() {
   Serial.begin(115200);
