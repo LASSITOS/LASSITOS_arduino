@@ -1,16 +1,27 @@
+/*
+ Uses library 
+ by Mischianti Renzo <http://www.mischianti.org>
+
+ https://www.mischianti.org/2019/01/02/pcf8574-i2c-digital-i-o-expander-fast-easy-usage/
+*/
+
+
+
 // --------------------------------
 // Settings I2C
 //---------------------------------
 
 #include <Wire.h>
+#include "PCF8574.h"
 
-#define  CSwitchTx_address 0x23
-#define  CSwitchCal_address 0x24
+#define  CSwitchTx_address 0x21
+#define  CSwitchCal_address 0x26
 #define  MA12070P_address 0x20
-
 uint8_t CSwitch =0 ;  // Controlling witch switch is open. 0 all a close.  1 for first, 2 for second,   4  for third. Sum for combinations. 
-
 uint8_t  CSwitch_code =0xFF;
+
+PCF8574 I2C_cSwitchTx(0x21);
+PCF8574 I2C_Calib(0x26);
 
 uint16_t addr;
 char addrStr[5];
@@ -23,38 +34,71 @@ char txString[500];   // String containing messages to be send to BLE terminal
 char subString[20];    
 
 
+
+
 // /////////////////////////////////////////////
 // --------------------------------
 // I2C communication
 //---------------------------------
 // /////////////////////////////////////////////
-void setCswitchTx (uint8_t device, uint8_t state ){
-  
-    CSwitch_code = 0xFF-((state>>2)*3 )<<6 ;// parse first bit
-    CSwitch_code = CSwitch_code - ((state>>1)%2*3 )<<4 ;// parse second bit
-    CSwitch_code = CSwitch_code - ((state)%2*3 )<<2  ;  // parse third bit
+void setCswitchTx ( uint8_t state ){
 
-  //Write message to the slave
-  Serial.printf("New state is: %d\n", state);
-  Serial.printf("Setting Cswitch #: 0X%x to: 0X%x\n", device,CSwitch_code);
-  Wire.beginTransmission(device<<1); // For writing last bit is set to 0 (set to 1 for reading)
-  Wire.write(CSwitch_code );
-  uint8_t error = Wire.endTransmission(true);
-  Serial.printf("endTransmission: %u\n", error);
+    if ((state>>2)%2){
+        I2C_cSwitchTx.digitalWrite(P7, LOW);
+        I2C_cSwitchTx.digitalWrite(P6, LOW);
+    } else{
+        I2C_cSwitchTx.digitalWrite(P7, HIGH);
+        I2C_cSwitchTx.digitalWrite(P6, HIGH);
+    }
+
+    if ((state>>1)%2){
+        I2C_cSwitchTx.digitalWrite(P4, LOW);
+        I2C_cSwitchTx.digitalWrite(P5, LOW);
+    } else{
+        I2C_cSwitchTx.digitalWrite(P4, HIGH);
+        I2C_cSwitchTx.digitalWrite(P5, HIGH);
+    }
+
+    if ((state)%2){
+        I2C_cSwitchTx.digitalWrite(P2, LOW);
+        I2C_cSwitchTx.digitalWrite(P3, LOW);
+    } else{
+        I2C_cSwitchTx.digitalWrite(P2, HIGH);
+        I2C_cSwitchTx.digitalWrite(P3, HIGH);
+    }
+//    CSwitch_code = 0xFF-((state>>2)*3 )<<6 ;// parse first bit
+//    CSwitch_code = CSwitch_code - ((state>>1)%2*3 )<<4 ;// parse second bit
+//    CSwitch_code = CSwitch_code - ((state)%2*3 )<<2  ;  // parse third bit
+//
+//  //Write message to the slave
+//  Serial.printf("New state is: %d\n", state);
+//  Serial.printf("Setting Cswitch #: 0X%x to: 0X%x\n", device<<1,CSwitch_code);
+//  Wire.beginTransmission(device<<1); // For writing last bit is set to 0 (set to 1 for reading)
+//  Wire.write(CSwitch_code );
+//  uint8_t error = Wire.endTransmission(true);
+//  Serial.printf("endTransmission: %u\n", error);
 }
 
 
-void setCswitchCal (uint8_t device, uint8_t state ){
+void setCswitchCal ( uint8_t state ){
   
-  CSwitch_code =0xff-state;
+      if ((state>>2)%2){
+        I2C_Calib.digitalWrite(P2, LOW);
+    } else{
+        I2C_Calib.digitalWrite(P2, HIGH);
+    }
 
-  //Write message to the slave
-  Serial.printf("New state is: %d\n", state);
-  Serial.printf("Setting Cswitch #: 0X%x to: 0X%x\n", device,CSwitch_code);
-  Wire.beginTransmission(device<<1);
-  Wire.write(CSwitch_code );
-  uint8_t error = Wire.endTransmission(true);
-  Serial.printf("endTransmission: %u\n", error);
+    if ((state>>1)%2){
+        I2C_Calib.digitalWrite(P1, LOW);
+    } else{
+        I2C_Calib.digitalWrite(P1, HIGH);
+    }
+
+    if ((state)%2){
+        I2C_Calib.digitalWrite(P0, LOW);
+    } else{
+        I2C_Calib.digitalWrite(P0, HIGH);
+    }
 }
 
 void write_I2C (uint8_t device, uint8_t address, uint8_t msg ){
@@ -102,7 +146,7 @@ void parse( String rxValue){
     if (index !=-1 and index2 !=-1){
       rxValue.substring(index+1,index2).toCharArray(addrStr,5);
       CSwitch=strtoul (addrStr, NULL, 16);
-      setCswitchTx (CSwitchTx_address,CSwitch);
+      setCswitchTx (CSwitch);
 
     } else {
       sprintf(txString,"CSwitch state can not be parsed from string '%s''",rxValue);
@@ -119,7 +163,7 @@ void parse( String rxValue){
     if (index !=-1 and index2 !=-1){
       rxValue.substring(index+1,index2).toCharArray(addrStr,5);
       CSwitch=strtoul (addrStr, NULL, 16);
-      setCswitchCal (CSwitchCal_address,CSwitch);
+      setCswitchCal (CSwitch);
 
     } else {
       sprintf(txString,"CSwitch state can not be parsed from string '%s''",rxValue);
@@ -180,8 +224,31 @@ void setup(){
     Serial.begin(115200);
 
 	// Initialize the I2C transmitter.	
-	Wire.begin();	
-  Serial.println("Ready!");
+
+  // Set pinMode to OUTPUT
+  I2C_cSwitchTx.pinMode(P3, OUTPUT);
+  I2C_cSwitchTx.pinMode(P2, OUTPUT);
+  I2C_cSwitchTx.pinMode(P4, OUTPUT);
+  I2C_cSwitchTx.pinMode(P5, OUTPUT);
+  I2C_cSwitchTx.pinMode(P6, OUTPUT);
+  I2C_cSwitchTx.pinMode(P7, OUTPUT);
+  I2C_Calib.pinMode(P0, OUTPUT);
+  I2C_Calib.pinMode(P1, OUTPUT);
+  I2C_Calib.pinMode(P2, OUTPUT);
+
+  Serial.print("Init cSwitches");
+  if (I2C_Calib.begin()){
+    Serial.println("I2C_Calib is OK");
+  }else{
+    Serial.println("I2C_Calib is KO");
+  }
+
+  if (I2C_cSwitchTx.begin()){
+    Serial.println("I2C_SwitchTx is OK");
+  }else{
+    Serial.println("I2C_SwitchTx is KO");
+  }
+  
 }
 
 
