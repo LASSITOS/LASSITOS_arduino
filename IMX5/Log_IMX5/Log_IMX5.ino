@@ -57,12 +57,12 @@ File headerFile; //File containing a header with settings dscription
 // settings altimeter LSD70A
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 //PINs can be changed to any pin. // For Hardware Serial use Pin 16 an 17. SoftwareSerial worked on pins 12 and 27
-int PIN_Rx = 16; // 16 = Hardware RX pin,
-int PIN_Tx = 17; // 17 = Hardware TX pin,
+int PIN_Rx = 26; //  Hardware RX pin, to PIN10 on IMX5
+int PIN_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 #define baudrateRS232 115200 
-#define Laser_fileBufferSize 1024 // Allocate 512Bytes of RAM for UART serial storage
+#define Laser_fileBufferSize 2048 // Allocate 512Bytes of RAM for UART serial storage
 #define logIntervall_laser 200
 int bitsToWrite;
 
@@ -285,7 +285,7 @@ void setup(){
     
     
     // Make data file
-    strcpy(dataFileName,  "/dataRS323.csv");   // create name of data file
+    strcpy(dataFileName,  "/dataRS232.csv");   // create name of data file
     Serial.print("Making data file:");
     Serial.println(dataFileName);
     
@@ -318,7 +318,7 @@ void loop(){
   if (logging){
     //  Laser data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if ( RS232.available() >= sdWriteSize and (millis()-logTime_laser) > 1000) {   
+    if ( RS232.available() >= sdWriteSize and (millis()-logTime_laser) > 500) {   
       bitsToWrite=RS232.available();
       Serial.println(",");
       Serial.println(bitsToWrite);

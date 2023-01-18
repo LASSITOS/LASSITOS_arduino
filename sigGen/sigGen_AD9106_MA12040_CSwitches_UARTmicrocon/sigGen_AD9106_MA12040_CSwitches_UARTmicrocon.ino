@@ -32,7 +32,7 @@
   
 */
 #include "SPI.h"
-#include "PCF8574.h"
+// #include "PCF8574.h"
 
 long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox module.
 
@@ -93,13 +93,13 @@ int loggingTime=30;   // duration of data recording
 uint8_t CSwitch =0 ;  // Controlling witch switch is open. 0 all a close.  1 for first, 2 for second,   4  for third. Sum for combinations. 
 uint8_t  CSwitch_code =0xFF;
 
-PCF8574 I2C_cSwitchTx(0x21);
-PCF8574 I2C_Calib(0x26);
+// PCF8574 I2C_cSwitchTx(CSwitchTx_address);
+// PCF8574 I2C_Calib(CSwitchCal_address);
 
 #define PIN_EN 33    // must be =1 at startup
 #define PIN_MUTE 15  // must be =0 at startup
 
-
+#define PIN_GPIOswitch 27 //GPIO used for switching SSR directly over GPIO
 
 
 // Sinus function variables
@@ -191,63 +191,33 @@ void stopMicro(){
 // /////////////////////////////////////////////
 void setCswitchTx ( uint8_t state ){
 
-    if ((state>>2)%2){
-        I2C_cSwitchTx.digitalWrite(P7, LOW);
-        I2C_cSwitchTx.digitalWrite(P6, LOW);
-    } else{
-        I2C_cSwitchTx.digitalWrite(P7, HIGH);
-        I2C_cSwitchTx.digitalWrite(P6, HIGH);
-    }
+   CSwitch_code = 0xFF-((state>>2)*3 )<<6 ;// parse first bit
+   CSwitch_code = CSwitch_code - ((state>>1)%2*3 )<<4 ;// parse second bit
+   CSwitch_code = CSwitch_code - ((state)%2*3 )<<2  ;  // parse third bit
 
-    if ((state>>1)%2){
-        I2C_cSwitchTx.digitalWrite(P4, LOW);
-        I2C_cSwitchTx.digitalWrite(P5, LOW);
-    } else{
-        I2C_cSwitchTx.digitalWrite(P4, HIGH);
-        I2C_cSwitchTx.digitalWrite(P5, HIGH);
-    }
-
-    if ((state)%2){
-        I2C_cSwitchTx.digitalWrite(P2, LOW);
-        I2C_cSwitchTx.digitalWrite(P3, LOW);
-    } else{
-        I2C_cSwitchTx.digitalWrite(P2, HIGH);
-        I2C_cSwitchTx.digitalWrite(P3, HIGH);
-    }
-//    CSwitch_code = 0xFF-((state>>2)*3 )<<6 ;// parse first bit
-//    CSwitch_code = CSwitch_code - ((state>>1)%2*3 )<<4 ;// parse second bit
-//    CSwitch_code = CSwitch_code - ((state)%2*3 )<<2  ;  // parse third bit
-//
-//  //Write message to the slave
-//  Serial.printf("New state is: %d\n", state);
-//  Serial.printf("Setting Cswitch #: 0X%x to: 0X%x\n", device<<1,CSwitch_code);
-//  Wire.beginTransmission(device<<1); // For writing last bit is set to 0 (set to 1 for reading)
-//  Wire.write(CSwitch_code );
-//  uint8_t error = Wire.endTransmission(true);
-//  Serial.printf("endTransmission: %u\n", error);
+	 //Write message to the slave
+	 Serial.printf("New state is: %d\n", state);
+	 Serial.printf("Setting Cswitch #: 0X%x to: 0X%x\n", CSwitchTx_address,CSwitch_code);
+	 Wire.beginTransmission(CSwitchTx_address); // For writing last bit is set to 0 (set to 1 for reading)
+	 Wire.write(CSwitch_code );
+	 uint8_t error = Wire.endTransmission(true);
+	 Serial.printf("endTransmission: %u\n", error);
 }
 
 
 void setCswitchCal ( uint8_t state ){
-  
-      if ((state>>2)%2){
-        I2C_Calib.digitalWrite(P2, LOW);
-    } else{
-        I2C_Calib.digitalWrite(P2, HIGH);
-    }
 
-    if ((state>>1)%2){
-        I2C_Calib.digitalWrite(P1, LOW);
-    } else{
-        I2C_Calib.digitalWrite(P1, HIGH);
-    }
+	CSwitch_code = 0xFF-state;
 
-    if ((state)%2){
-        I2C_Calib.digitalWrite(P0, LOW);
-    } else{
-        I2C_Calib.digitalWrite(P0, HIGH);
-    }
+	 //Write message to the slave
+	 Serial.printf("New state is: %d\n", state);
+	 Serial.printf("Setting Cswitch Cal #: 0X%x to: 0X%x\n", CSwitchCal_address,CSwitch_code);
+	 Wire.beginTransmission(CSwitchCal_address); // For writing last bit is set to 0 (set to 1 for reading)
+	 Wire.write(CSwitch_code );
+	 uint8_t error = Wire.endTransmission(true);
+	 Serial.printf("endTransmission: %u\n", error);
 }
+
 
 void write_I2C (uint8_t device, uint8_t address, uint8_t msg ){
   //Write message to the slave
@@ -628,6 +598,24 @@ void parse( String rxValue){
       Serial.println(txString);
     }
 
+    // Read register  I2C
+  }else if (rxValue.indexOf("SETGPIOSW") != -1) {
+ 
+  Serial.println("Setting new state for GPIO controlled CSwitch.");
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+      if (rxValue.substring(index+1,index2).toInt()==1){
+			   digitalWrite(PIN_GPIOswitch , HIGH);
+      }else {
+			   digitalWrite(PIN_GPIOswitch , LOW);
+	    }
+
+    } else {
+      sprintf(txString,"CSwitch state can not be parsed from string '%s''",rxValue);
+      Serial.println(txString);
+    }
+
   
     // Read register  I2C
   }else if(rxValue.substring(0,4)== "I2CR" and rxValue.charAt(8)== 'R') {
@@ -789,33 +777,48 @@ void setup(){
 	digitalWrite(PIN_EN , HIGH);   // must be =1 at startup
 	pinMode(PIN_MUTE , OUTPUT); 
 	digitalWrite(PIN_MUTE , LOW);  // must be =0 at startup
+	pinMode(PIN_GPIOswitch , OUTPUT); 
+	digitalWrite(PIN_GPIOswitch , LOW);  // switch off at startup
+	
 	
 	// Initialize the I2C transmitter.	
 	Wire.begin();	
+	
+	// Set the initial state of the pins on the PCF8574 devices
+	Wire.beginTransmission(CSwitchTx_address); // device 1
+    Wire.write(0x00); // all ports off
+    uint8_t error = Wire.endTransmission();
+    Serial.printf("endTransmission on CSwitch Tx: %u\n", error);
+    Wire.begin();
+    Wire.beginTransmission(CSwitchCal_address); // device 2
+    Wire.write(0x00); // all ports off
+    error = Wire.endTransmission();
+    Serial.printf("endTransmission on CSwitch CalibCoil: %u\n", error);
+	
+	
+	  // // Set pinMode to OUTPUT
+	  // I2C_cSwitchTx.pinMode(P3, OUTPUT);
+	  // I2C_cSwitchTx.pinMode(P2, OUTPUT);
+	  // I2C_cSwitchTx.pinMode(P4, OUTPUT);
+	  // I2C_cSwitchTx.pinMode(P5, OUTPUT);
+	  // I2C_cSwitchTx.pinMode(P6, OUTPUT);
+	  // I2C_cSwitchTx.pinMode(P7, OUTPUT);
+	  // I2C_Calib.pinMode(P0, OUTPUT);
+	  // I2C_Calib.pinMode(P1, OUTPUT);
+	  // I2C_Calib.pinMode(P2, OUTPUT);
 
-	  // Set pinMode to OUTPUT
-	  I2C_cSwitchTx.pinMode(P3, OUTPUT);
-	  I2C_cSwitchTx.pinMode(P2, OUTPUT);
-	  I2C_cSwitchTx.pinMode(P4, OUTPUT);
-	  I2C_cSwitchTx.pinMode(P5, OUTPUT);
-	  I2C_cSwitchTx.pinMode(P6, OUTPUT);
-	  I2C_cSwitchTx.pinMode(P7, OUTPUT);
-	  I2C_Calib.pinMode(P0, OUTPUT);
-	  I2C_Calib.pinMode(P1, OUTPUT);
-	  I2C_Calib.pinMode(P2, OUTPUT);
+	  // Serial.print("Init cSwitches");
+	  // if (I2C_Calib.begin()){
+		// Serial.println("I2C_Calib is OK");
+	  // }else{
+		// Serial.println("I2C_Calib is KO");
+	  // }
 
-	  Serial.print("Init cSwitches");
-	  if (I2C_Calib.begin()){
-		Serial.println("I2C_Calib is OK");
-	  }else{
-		Serial.println("I2C_Calib is KO");
-	  }
-
-	  if (I2C_cSwitchTx.begin()){
-		Serial.println("I2C_SwitchTx is OK");
-	  }else{
-		Serial.println("I2C_SwitchTx is KO");
-	  }
+	  // if (I2C_cSwitchTx.begin()){
+		// Serial.println("I2C_SwitchTx is OK");
+	  // }else{
+		// Serial.println("I2C_SwitchTx is KO");
+	  // }
 
 
 	//enable MA12070P to be allow to acces registers

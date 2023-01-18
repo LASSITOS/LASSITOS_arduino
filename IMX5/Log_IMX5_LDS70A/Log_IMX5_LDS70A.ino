@@ -42,6 +42,7 @@ SFE_UBLOX_GNSS myGNSS;
 //HardwareSerial
 #include <HardwareSerial.h>
 HardwareSerial RS232(2);
+HardwareSerial IMX5(1);
 
 #define version "IMX5+Altimeter v1.0"
 
@@ -89,6 +90,19 @@ int PIN_Tx = 17; // 17 = Hardware TX pin,
 #define flush_intervall 30000
 #define Laser_log_intervall 2000
 int bitesToWrite;
+
+
+
+// settings altimeter IMX5
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+//PINs can be changed to any pin. // For Hardware Serial use Pin 16 an 17. SoftwareSerial worked on pins 12 and 27
+int IMX5_Rx = 26; //  Hardware RX pin, to PIN10 on IMX5
+int IMX5_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+#define baudrateIMX5 115200 
+#define IMX5_BufferSize 1024 // Allocate 1024 Bytes of RAM for UART serial storage
+#define IMX5_log_intervall 2000
+
 
 
 // Setting for u-blox 
