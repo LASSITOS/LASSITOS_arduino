@@ -28,8 +28,8 @@
 #include <HardwareSerial.h>
 HardwareSerial IMX5(2);
 
-int PIN_Rx = 26; //  Hardware RX pin, to PIN10 on IMX5
-int PIN_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
+int PIN_Rx = 25; //  Hardware RX pin, to PIN10 on IMX5
+int PIN_Tx = 26; //  Hardware TX pin, to PIN8 on IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 int baudrateIMX5= 115200 ;
@@ -37,30 +37,101 @@ unsigned long lastTime;
 #define sdWriteSize 256 // Write data to the SD card in blocks of 512 bytes
 uint8_t *myBuffer; // A buffer to hold the data while we write it to SD car
 
-const char* asciiMessage = "$ASCB,512,,,100,,,,,,,,,*38";  // Get PINS1 @ 10Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+char asciiMessage[] = "$ASCB,512,,,2000,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+char asciiMessageformatted[100];
+
+
+// add checksum to asciiMessage
+int FormatAsciiMessage(  char *Message,int messageLength, char *outMessage ){
+  int checkSum = 0;
+  unsigned int ptr = 0;
+  char buf[16];
+  outMessage[0] = '\0';
+  
+  if (Message[0] == '$'){
+    ptr++;
+  } else {
+    strcpy(outMessage, "$");
+  }
+
+  // concatenate Message to outMessage
+  strcat(outMessage,Message);
+
+  // compute checksum
+  while (ptr < messageLength){
+    checkSum ^= Message[ptr];
+    ptr++;
+  }
+  Serial.print("Size of message: ");
+  Serial.println(messageLength);
+  
+  sprintf(buf, "*%.2x\r\n", checkSum);
+  strcat(outMessage,buf);
+ 
+  return sizeof(outMessage);
+}
+
+
 
 void setup() {
   Serial.begin(115200);
- Serial.println("Started serial to PC");
+  Serial.println("Started serial to PC");
   
   IMX5.begin(baudrateIMX5,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
   Serial.println("Started serial to IMX5");
 
   myBuffer = new uint8_t[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
+  
+
+  if (!FormatAsciiMessage( asciiMessage,  sizeof(asciiMessage),asciiMessageformatted)){
+      Serial.println("Failed to encode ASCII get INS message\r\n");
+  }else {
+      Serial.println(asciiMessageformatted);
+      IMX5.write(asciiMessageformatted); //send instruction for sending ASCII messages
+      Serial.println("Send instruction for sending ASCII messages to IMX5"); 
+  }
   while(IMX5.read() >= 0);
 
-  IMX5.write(asciiMessage); //send instruction for sending ASCII messages
-  Serial.println("Send instruction for sending ASCII messages to IMX5");
+																		 
+																		
 }
+
 
 void loop() {
   if (Serial.available()) {      // If anything comes in Serial (USB),
-     IMX5.write(Serial.read());   // read it and send it out Serial1 (pins 0 & 1)
-     Serial.println("Got data from Serial ");
-     }
+    
+    int availableBytes = Serial.available();
+    
+    if(availableBytes<95){
+      int i=0;
+      char Message[100];
+      while( i<availableBytes){
+          Message[i] = Serial.read();
+          i++;
+      }
+      Message[i]= '\0';
+      Serial.print("Original message: ");
+      if (!FormatAsciiMessage( Message, i,asciiMessageformatted)){
+            Serial.println("Failed to encode ASCII get INS message\r\n");
+        }else {
+            Serial.print("Message formatted to  ASCII messages for IMX5: ");
+					 
+            Serial.println(asciiMessageformatted);
+  
+            IMX5.write(asciiMessageformatted); //send instruction for sending ASCII messages
+             
+      }
+    }
 
+//	IMX5.write(Serial.read());   // read it and send it out Serial1 (pins 0 & 1)
+  }
+
+
+  
   if ( IMX5.available()) {     // If anything comes in Serial1 (pins 0 & 1)
-    Serial.write( IMX5.read());   // read it and send it out Serial (USB)
+    Serial.write( IMX5.read());
+//    Serial.print( IMX5.readString());   // read it and send it out Serial (USB)
+//    Serial.write( IMX5.read());   // read it and send it out Serial (USB)
 //    Serial.println("Got data from IMX5. ");
   }
 //  if ( IMX5.available() >= sdWriteSize) {   
@@ -71,12 +142,12 @@ void loop() {
 //      Serial.println(".");
 //    }
     
-//  if ( (millis() - lastTime > 10000)){   
-//    lastTime = millis(); //Update the timer
-//    Serial.println("10 s are passed. ");
-//    SA
+										   
+											 
+										  
+		
 
-//  }
+	 
 
   delay(5);
 }

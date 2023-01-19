@@ -57,8 +57,8 @@ File headerFile; //File containing a header with settings dscription
 // settings altimeter LSD70A
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 //PINs can be changed to any pin. // For Hardware Serial use Pin 16 an 17. SoftwareSerial worked on pins 12 and 27
-int PIN_Rx = 26; //  Hardware RX pin, to PIN10 on IMX5
-int PIN_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
+int PIN_Rx = 16; //  Hardware RX pin, to PIN10 on IMX5
+int PIN_Tx = 17; //  Hardware TX pin, to PIN8 on IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 #define baudrateRS232 115200 
@@ -66,42 +66,9 @@ int PIN_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
 #define logIntervall_laser 200
 int bitsToWrite;
 
-char asciiMessage[] = "$ASCB,512,,,500,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
-char asciiMessageformatted[100];
+const char* asciiMessage = "$ASCB,512,,,500,,,,,,,,,*3C\r\n";  // Get PINS1 @ 10Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 
 
-// add checksum to asciiMessage
-int FormatAsciiMessage(  char *Message, char *outMessage ){
-
-  int bufferLength = sizeof(Message);
-  int checkSum = 0;
-  unsigned int ptr = 0;
-  char buf[16];
-  outMessage[0] = '\0';
-  
-  if (Message[0] == '$'){
-    ptr++;
-  } else {
-    strcpy(outMessage, "$");
-  }
-  
-
-
-  // concatenate Message to outMessage
-  strcat(outMessage,Message);
-
-  // compute checksum
-  while (ptr < bufferLength){
-    checkSum ^= Message[ptr];
-    ptr++;
-  }
-
-  sprintf(buf, "*%.2x\r\n", checkSum);
-  strcat(outMessage,buf);
-  
-  Serial.println(outMessage);
-  return sizeof(outMessage);
-}
 
 
 void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
@@ -341,16 +308,9 @@ void setup(){
     while(RS232.read() >= 0) ; // flush the receive buffer.
     logTime_laser  = millis(); // logTime_laser  
     start  = millis(); // logTime_laser 
-
-
-
-    if (!FormatAsciiMessage( asciiMessage,asciiMessageformatted)){
-        Serial.println("Failed to encode ASCII get INS message\r\n");
-    }else {
-        Serial.println(asciiMessageformatted);
-        RS232.write(asciiMessageformatted); //send instruction for sending ASCII messages
-        Serial.println("Send instruction for sending ASCII messages to IMX5"); 
-    }
+	
+	  RS232.write(asciiMessage); //send instruction for sending ASCII messages
+    Serial.println("Send instruction for sending ASCII messages to IMX5");
 	
 }
 
@@ -360,14 +320,52 @@ void loop(){
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if ( RS232.available() >= sdWriteSize and (millis()-logTime_laser) > 500) {   
       bitsToWrite=RS232.available();
+      Serial.println(",");
       Serial.println(bitsToWrite);
+      Serial.println(millis()-start);
+      dataFile.println(" ");
+      dataFile.print("# iTOW ");
+      dataFile.println(millis()-start);
+      Serial.print(", ");
       Serial.println(RS232.readBytes(myBuffer, bitsToWrite));
       Serial.print(".");
       Serial.println(dataFile.write( myBuffer, bitsToWrite));
 
+      Serial.println(millis()-start);
+      dataFile.print("# end ");
+      dataFile.println(millis()-start);
+//      delay(20);
       logTime_laser  = millis();
       delay(25);
     }
+
+    
+//    while(RS232.available()){
+//        Serial.write(RS232.read());   
+//    }
+//    if (millis()-logTime_laser > 2000){
+//      Serial.print("Time: ");
+//      Serial.println(millis());
+//      logTime_laser=millis();
+//    }
+
+//    if ( RS232.available() >= sdWriteSize) {   
+//      Serial.println(".");
+//      Serial.println(RS232.available());
+//      
+//      while(RS232.available()){
+//        dataFile.write(RS232.read());   
+//      }
+////    }else if (RS232.available()){
+////      Serial.println(RS232.available());
+//    }
+//    if ( RS232.available() >= sdWriteSize) {   
+//      bites=RS232.available()
+//      Serial.print(", ");
+//      Serial.println(RS232.readBytes(myBuffer, sdWriteSize));
+//      Serial.print(".");
+//      Serial.println(dataFile.write( myBuffer, sdWriteSize))
+//    }
    
   }
 
