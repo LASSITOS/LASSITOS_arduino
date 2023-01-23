@@ -113,12 +113,8 @@ uint16_t freqDat;
 float gain=0;
 uint16_t gainDAT = 0x1000;
 
-// Define a C-major scale to play all the notes up and down.
-uint64_t freqList[] = { 100,200,300,400,500,600,700,800,900,1000,1500,2000,2500,3000,4000,5000,6000,7000,8000,9000 };
-uint64_t freqList2[] = { 100,250,500,750,1000,2000,2500,4000,5000,6000,7000,8000,9000 };
-
-uint16_t gainList[] = {0x2000,0x1400,0x1200,0x1000,0x0800 ,0x0400 ,0x0200 ,0x0100 };
 //-=-=-=-=-=-=-=-=-=-=-=-
+
 
 
 
@@ -146,8 +142,177 @@ bool BLE_start=false;  // Start datalogger over BLE
 #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 
 
+// /////////////////////////////////////////////
+// ---------------------------------------------
+// declare functions to avoid trowing errors
+// --------------------------------------------
+void Send_tx_String(char *txString);
 
 
+
+// /////////////////////////////////////////////
+// ---------------------------------------------
+// running and test functions
+// ---------------------------------------------
+// /////////////////////////////////////////////
+
+
+//resonant frequencies:
+
+#define F1 1061
+#define F2 4618
+#define F3 8651
+uint64_t freqs[] ={F1,F3};
+freq=F3;
+
+#define CALF1 1055
+#define CALF2 4744
+#define CALF3 8805
+int CAL_states[]={0,1,2,4};
+
+#define MAXGAIN 0x2000
+
+void testBasics(){
+	delay(500);
+	strcpy(txString,"Starting basic test");
+	Send_tx_String(txString) ;
+	startMicro();   // start recording of ADC data for given duration in seconds
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  delay(1000);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  delay(1000);
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+	for (int i=0; i<2; ++i) {
+		freq=freqs[i];
+		configureSineWave();
+		sprintf(txString,"New frequency is: %d",freq );
+		Send_tx_String(txString); 
+    if(i==0){ 
+      digitalWrite(PIN_GPIOswitch , HIGH);
+    }else{
+      digitalWrite(PIN_GPIOswitch , LOW);
+    }
+    
+		for (int j=0; j<4; ++j) {
+			setCswitchCal(CAL_states[j]);
+      delay(10);
+			digitalWrite(PIN_MUTE , HIGH);  // unmute
+      run();
+      trigger();
+      delay(1000);
+      // Pause for a tenth of a second between notes.
+      stop_trigger();
+      digitalWrite(PIN_MUTE , LOW);  // mute
+			delay(200);
+		}
+   }
+   delay(1000);
+   stopMicro();
+   strcpy(txString,"End of test");
+   Send_tx_String(txString) ;
+}
+
+void frequencySweep(int start,int stp,int Delta){
+
+	  int A=start/Delta;
+	  int B=stp/Delta;
+
+    Serial.print("A");
+    Serial.println(A);
+    Serial.print("B");
+    Serial.println(B);
+
+    
+	  delay(500);
+	  strcpy(txString,"Starting frequency sweep");
+	  Send_tx_String(txString) ;
+	  startMicro();   // start recording of ADC data for given duration in seconds
+	  delay(2000);
+    digitalWrite(PIN_MUTE , HIGH);  // unmute
+    
+	  for (int i=A; i<B; ++i) {
+		  // Play the note for a quarter of a second.
+		  freq=i*Delta;
+		  configureSineWave();
+		  sprintf(txString,"New frequency is: %d",freq );
+		  Send_tx_String(txString); 
+		  digitalWrite(PIN_MUTE , HIGH);  // unmute
+		  run();
+		  trigger();
+		  delay(250);
+		  // Pause for a tenth of a second between notes.
+		  stop_trigger();
+		  digitalWrite(PIN_MUTE , LOW);  // mute
+		  delay(50);
+	  }
+    delay(1000);
+    stopMicro();
+	  strcpy(txString,"End of sweep");
+	  Send_tx_String(txString) ;
+}	  
+
+void GainSweep(int start,int stp,int Delta){
+
+    if(stp>MAXGAIN){
+      sprintf(txString,"Stop gain is larger then maximum gain: %04X",MAXGAIN );
+      Serial.print("STOP");
+      Serial.println(stp);
+      Serial.print("Maxgain");
+      Serial.println(MAXGAIN);
+      Send_tx_String(txString) ;
+      return;
+      }
+    
+	  int A=start/Delta;
+	  int B=stp/Delta;
+    Serial.print("A");
+    Serial.println(A);
+    Serial.print("B");
+    Serial.println(B);
+	  
+	  delay(500);
+	  strcpy(txString,"Starting gain sweep");
+	  Send_tx_String(txString) ;
+	  startMicro();   // start recording of ADC data for given duration in seconds
+	  delay(2000);
+      
+      
+	  for (int j=0; j<2; ++j) {
+		  freq=freqs[j];
+		  configureSineWave();
+		  sprintf(txString,"New frequency is: %d",freq );
+		  Send_tx_String(txString); 
+      if(j==0){ 
+        digitalWrite(PIN_GPIOswitch , HIGH);
+        delay(10);
+      }else{
+        digitalWrite(PIN_GPIOswitch , LOW);
+        delay(10);
+      }
+
+      
+		  for (int i=A; i<B; ++i) {
+			  // Play the note for a quarter of a second.
+			  gainDAT=i*Delta;
+			  setGain2(gainDAT);
+			  sprintf(txString,"New gain is: %d",gainDAT );
+			  Send_tx_String(txString); 
+			  digitalWrite(PIN_MUTE , HIGH);  // unmute
+			  run();
+			  trigger();
+			  delay(200);
+			  // Pause for a tenth of a second between notes.
+			  stop_trigger();
+			  digitalWrite(PIN_MUTE , LOW);  // mute
+			  delay(50);
+		  }
+		delay(1000);
+    }
+    stopMicro();
+	  strcpy(txString,"End of sweep");
+	  Send_tx_String(txString) ;
+}
 
 // /////////////////////////////////////////////
 // ---------------------------------------------
@@ -412,73 +577,61 @@ void parse( String rxValue){
     run();
     trigger();
     digitalWrite(PIN_MUTE , HIGH);  // unmute
-    
-  } else if (rxValue.indexOf("S2") != -1 or rxValue.indexOf("sweep2") != -1) { 
-    delay(500);
-    strcpy(txString,"Start sweep");
-    Send_tx_String(txString) ;
-    startMicro();  // start recording of ADC data for given duration in seconds
-	  delay(2000);
-    digitalWrite(PIN_MUTE , HIGH);  // unmute
-    
-	  for (int j=0; j<sizeof(gainList)/sizeof(uint16_t); ++j) {
-		  strcpy(txString,"New gain");
-//		  sprintf(txString,"New gain is: %04X",gainList[j] );
-      strcpy(txString,"Changing gain" );
-		  Send_tx_String(txString); 
-		  gainDAT=gainList[j];
-		  delay(500);
-		  for (int i=0; i<sizeof(freqList2)/sizeof(uint64_t); ++i) {
-			  // Play the note for a quarter of a second.
-			  freq=freqList2[i];
-			  configureSineWave();
-			  sprintf(txString,"New frequency is: %d ",freq );
-			  Send_tx_String(txString); 
-			  run();
-			  trigger();
-			  delay(1000);
-			  // Pause for a tenth of a second between notes.
-			  stop_trigger();
-			  delay(200);
-			}
-	  }
-    digitalWrite(PIN_MUTE , LOW);  // mute
-    stopMicro();
-	  strcpy(txString,"End of sweep");
-	  Send_tx_String(txString); 
-	  
-  } else if (rxValue.indexOf("SWEEP") != -1 or rxValue.indexOf("sweep") != -1) { 
-	  delay(500);
-	  strcpy(txString,"Start sweep");
-	  Send_tx_String(txString) ;
-	  startMicro();   // start recording of ADC data for given duration in seconds
-	  delay(2000);
-    digitalWrite(PIN_MUTE , HIGH);  // unmute
-    
-	  for (int i=0; i<sizeof(freqList)/sizeof(uint64_t); ++i) {
-		  // Play the note for a quarter of a second.
-		  freq=freqList[i];
-		  configureSineWave();
-		  sprintf(txString,"New frequency is: %d",freq );
-		  Send_tx_String(txString); 
-		  run();
-		  trigger();
-		  delay(1000);
-		  // Pause for a tenth of a second between notes.
-		  stop_trigger();
-		  delay(200);
-      
-	  }
-    digitalWrite(PIN_MUTE , LOW);  // mute
-    stopMicro();
-	  strcpy(txString,"End of sweep");
-	  Send_tx_String(txString) ;
-	  
-      
+  
   } else if (rxValue.indexOf("STOP") != -1 or rxValue.indexOf("stop") != -1 ) {
-	  stop_trigger();
+    stop_trigger();
     digitalWrite(PIN_MUTE , LOW);  // mute
+     
+  } else if (rxValue.indexOf("TEST") != -1 or rxValue.indexOf("test") != -1) { 
+	testBasics();
     
+	  
+  } else if (rxValue.indexOf("FSWEEP") != -1 or rxValue.indexOf("fsweep") != -1) { 
+    Serial.println("Got freq sweep command");
+    int index = rxValue.indexOf(":");
+    int index2 = rxValue.indexOf(":",index+1);
+	  int index3 = rxValue.indexOf(":",index2+1);
+	  int index4 = rxValue.indexOf(":",index3+1);
+    if (index !=-1 and index2 !=-1 and index3 !=-1 and index4 !=-1){
+		  int A=rxValue.substring(index+1,index2).toInt();
+	    int B=rxValue.substring(index2+1,index3).toInt();
+	    int delta=rxValue.substring(index3+1,index4).toInt();
+		  Serial.print("START");
+      Serial.println(A);
+      Serial.print("STOP");
+      Serial.println(B);
+      Serial.print("Delta");
+      Serial.println(delta);
+		  frequencySweep(A,B,delta);
+	  } else {
+      sprintf(txString,"Start, Stop and delta can not be parsed form string: '%s''",rxValue);
+      Serial.println(txString);
+	  }
+  } else if (rxValue.indexOf("GSWEEP") != -1 or rxValue.indexOf("gsweep") != -1) { 
+    Serial.println("Got gain sweep command"); 
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+	  int index3 = rxValue.indexOf(":",index2+1);
+	  int index4 = rxValue.indexOf(":",index3+1);
+    if (index !=-1 and index2 !=-1 and index3 !=-1 and index4 !=-1){
+		  rxValue.substring(index+1,index2).toCharArray(datStr ,index2-index+1);
+      int A=strtoul (datStr, NULL, 16);
+	    rxValue.substring(index2+1,index3).toCharArray(datStr ,index3-index2+1);
+      int B= strtoul (datStr, NULL, 16);
+	    rxValue.substring(index3+1,index4).toCharArray(datStr ,index4-index3+1);
+      int delta=strtoul (datStr, NULL, 16);
+		  Serial.print("START");
+      Serial.println(A);
+      Serial.print("STOP");
+      Serial.println(B);
+      Serial.print("Delta");
+      Serial.println(delta);
+		  GainSweep(A,B,delta);
+    } else {
+      sprintf(txString,"Start, Stop and delta can not be parsed form string: '%s''",rxValue);
+      Serial.println(txString);
+    }  
+ 
   } else if (rxValue.indexOf("RECORD") != -1 or rxValue.indexOf("record") != -1 ) {
 	  strcpy(txString,"ADC recording started");
     Send_tx_String(txString) ;
@@ -582,7 +735,7 @@ void parse( String rxValue){
     }
 
   
-    // Set TX CalibCoil over I2C
+    // Set CalibCoil CSwitch over I2C
   }else if (rxValue.indexOf("SETCSW") != -1) {
  
   Serial.println("Setting new state for calibration coil CSwitch.");

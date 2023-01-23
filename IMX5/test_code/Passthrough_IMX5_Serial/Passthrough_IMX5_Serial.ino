@@ -26,7 +26,7 @@
 
 //HardwareSerial
 #include <HardwareSerial.h>
-HardwareSerial IMX5(1);
+HardwareSerial IMX5(2);
 
 int PIN_Rx = 16; //  Hardware RX pin,
 int PIN_Tx = 17; // Hardware TX pin,
@@ -83,13 +83,13 @@ void setup() {
   myBuffer = new uint8_t[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
   
 
-  if (!FormatAsciiMessage( asciiMessage,  sizeof(asciiMessage),asciiMessageformatted)){
-      Serial.println("Failed to encode ASCII get INS message\r\n");
-  }else {
-      Serial.println(asciiMessageformatted);
-      IMX5.write(asciiMessageformatted); //send instruction for sending ASCII messages
-      Serial.println("Send instruction for sending ASCII messages to IMX5"); 
-  }
+//  if (!FormatAsciiMessage( asciiMessage,  sizeof(asciiMessage),asciiMessageformatted)){
+//      Serial.println("Failed to encode ASCII get INS message\r\n");
+//  }else {
+//      Serial.println(asciiMessageformatted);
+//      IMX5.write(asciiMessageformatted); //send instruction for sending ASCII messages
+//      Serial.println("Send instruction for sending ASCII messages to IMX5"); 
+//  }
   while(IMX5.read() >= 0);
 
 }

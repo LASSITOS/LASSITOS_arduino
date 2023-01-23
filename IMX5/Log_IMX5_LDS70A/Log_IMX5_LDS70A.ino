@@ -29,11 +29,6 @@
   
 */
 
-#include <Wire.h> //Needed for I2C to GNSS
-
-#include <SparkFun_u-blox_GNSS_Arduino_Library.h> 
-SFE_UBLOX_GNSS myGNSS;
-
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
@@ -41,8 +36,8 @@ SFE_UBLOX_GNSS myGNSS;
 
 //HardwareSerial
 #include <HardwareSerial.h>
-HardwareSerial RS232(2);
-HardwareSerial IMX5(1);
+HardwareSerial RS232(1);
+HardwareSerial IMX5(2);
 
 #define version "IMX5+Altimeter v1.0"
 
@@ -50,7 +45,8 @@ long lastTime = 0; //Simple local timer. Limits amount if I2C traffic to u-blox 
 long lastTime2 = 0; //Second simple local timer. 
 long lastTime_logstatus = 0; //Second simple local timer. 
 long logTime_laser;
-long logTime_laser2;
+long logTime_IMX5;
+
 
 int statLED = 13;
 
@@ -65,18 +61,27 @@ int statLED = 13;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 #define sdWriteSize 512 // Write data to the SD card in blocks of 512 bytes
-#define sdWriteSize_Laser 500 // Write data to the SD card in blocks of almost 512 bytes
-uint8_t *myBuffer; // A buffer to hold the GNSS data while we write it to SD car
-uint8_t *myBuffer_laser; // A buffer to hold the Laser data while we write it to SD car
+#define WriteSize_Laser 16 // Write data to the SD card in blocks of almost 512 bytes
+#define WriteSize_IMX5 128 // Write data to the SD card in blocks of almost 512 bytes
+#define myBufferSize 8192
+#define tempBufferSize 1024  // must be bigger than sdWriteSize,WriteSize_Laser and WriteSize_IMX5
+//uint8_t *myBuffer; // A buffer to hold the GNSS data while we write it to SD card
+//uint8_t *myBuffer_laser; // A buffer to hold the Laser data while we write it to SD card
+//uint8_t *tempBuffer;
+uint8_t myBuffer[myBufferSize]; // Create our own buffer to hold the data while we write it to SD card
+uint8_t tempBuffer[tempBufferSize]; // Create temporay buffer
+uint8_t myBuffer_laser[sdWriteSize]; // Create buffer for laser data
 
+int BufferTail=0;
+int BufferHead=0;
+int bitesToWrite;
 SPIClass spi = SPIClass(VSPI);
 
-char headerFileName[24]; //Max file name length is 23 characters)
 char dataFileName[24]; //Max file name length is 23 characters)
 File dataFile; //File that all data is written to
-File headerFile; //File containing a header with settings description
 
-
+bool logging = false;
+unsigned long lastPrint; // Record when the last Serial print took place
 
 // settings altimeter LSD70A
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -85,49 +90,23 @@ int PIN_Rx = 16; // 16 = Hardware RX pin,
 int PIN_Tx = 17; // 17 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define baudrateRS232 115200 
-
-#define Laser_BufferSize 1024 // Allocate 1024 Bytes of RAM for UART serial storage
-#define flush_intervall 30000
+#define Laser_BufferSize 2048 // Allocate 1024 Bytes of RAM for UART serial storage
 #define Laser_log_intervall 2000
-int bitesToWrite;
 
 
 
-// settings altimeter IMX5
+// settings INS IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 //PINs can be changed to any pin. // For Hardware Serial use Pin 16 an 17. SoftwareSerial worked on pins 12 and 27
 int IMX5_Rx = 26; //  Hardware RX pin, to PIN10 on IMX5
 int IMX5_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define baudrateIMX5 115200 
-#define IMX5_BufferSize 1024 // Allocate 1024 Bytes of RAM for UART serial storage
+#define IMX5_BufferSize 2048 // Allocate 1024 Bytes of RAM for UART serial storage
 #define IMX5_log_intervall 2000
 
-
-
-// Setting for u-blox 
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-bool logging = false;
-bool log_GPS = true;
-
-bool IMUcalibration=false;
-int NavigationFrequency = 5;
-dynModel DynamicModel = (dynModel)7;
-bool log_RMX = false;
-bool log_ESFRAW  = false;
-bool log_ESFMEAS = false;
-bool log_ESFALG = false;
-bool log_NAVPVAT = true;
-bool log_NAVPVT = false;
-bool log_NAVATT = false;
-bool log_ESFINS = false;
-bool log_STATUS = true;
-//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-#define fileBufferSize 16384 // Allocate 32KBytes of RAM for UBX message storage
-
-unsigned long lastPrint; // Record when the last Serial print took place
-unsigned long bytesWritten = 0; // Record how many bytes have been written to SD card
+char asciiMessage[] = "$ASCB,512,,,500,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+char asciiMessageformatted[128];
 
 
 long Year ;
@@ -136,6 +115,7 @@ long Day ;
 long Hour ;
 long Minute ;
 long Second;
+
 
 
 // Setting for BLE connection
@@ -194,47 +174,67 @@ void Send_tx_String(char *txString){
 
 // /////////////////////////////////////////////
 // ---------------------------------------------
-//GNSS code
+//INS code
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
 
+// add checksum to asciiMessage
+int FormatAsciiMessage(  char *Message,int messageLength, char *outMessage ){
+  int checkSum = 0;
+  unsigned int ptr = 0;
+  char buf[16];
+  outMessage[0] = '\0';
+  
+  if (Message[0] == '$'){
+    ptr++;
+  } else {
+    strcpy(outMessage, "$");
+  }
 
-void checkIMUcalibration(){
-    BLE_message=true;
-    // ESF data is produced at the navigation rate, so by default we'll get fresh data once per second
-    if (myGNSS.getEsfInfo()) // Poll new ESF STATUS data
-    {
-      strcat(txString,"Fusion Mode: ");  
-      sprintf(subString,"%d",myGNSS.packetUBXESFSTATUS->data.fusionMode);  
-      strcat(txString,subString); 
-      if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 0){
-      strcat(txString,"  Sensor is initializing..."); 
-      strcat(txString,"\n");
-      // logging=false;
-      }
-      else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 1){
-      strcat(txString,"  Sensor is calibrated!");  
-      strcat(txString,"\n");
-      IMUcalibration=false;
-      }
-      else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 2){
-      strcat(txString,"  Sensor fusion is suspended!"); 
-      strcat(txString,"\n");
-      IMUcalibration=false;
-      }
-      else if (myGNSS.packetUBXESFSTATUS->data.fusionMode == 3){
-      strcat(txString,"  Sensor fusion is disabled!"); 
-      strcat(txString,"\n");
-      IMUcalibration=false;
-      }
-    
-    }
+  // concatenate Message to outMessage
+  strcat(outMessage,Message);
+
+  // compute checksum
+  while (ptr < messageLength){
+    checkSum ^= Message[ptr];
+    ptr++;
+  }
+  Serial.print("Size of message: ");
+  Serial.println(messageLength);
+  
+  sprintf(buf, "*%.2x\r\n", checkSum);
+  strcat(outMessage,buf);
+ 
+  return sizeof(outMessage);
 }
 
 
+// setting up INS 
+void setupINS(){ 
+    if (!FormatAsciiMessage( asciiMessage,  sizeof(asciiMessage),asciiMessageformatted)){
+		  Serial.println("Failed to encode ASCII get INS message\r\n");
+	}else {
+		  Serial.println(asciiMessageformatted);
+		  IMX5.write(asciiMessageformatted); //send instruction for sending ASCII messages
+		  Serial.println("Send instruction for sending ASCII messages to IMX5"); 
+	}
+	while(IMX5.read() >= 0);      
+   
+    Serial.println(F("INS setting updated"));
+    strcat(txString,"INS setting updated");
+}
 
+void readDateTime(){
+//  Year = myGNSS.getYear();
+//  Month = myGNSS.getMonth();
+//  Day = myGNSS.getDay();
+//  Hour = myGNSS.getHour();
+//  Minute = myGNSS.getMinute();
+//  Second = myGNSS.getSecond();
+}
 
+      
 // /////////////////////////////////////////////
 // ---------------------------------------------
 // SD card funtions und code
@@ -357,16 +357,6 @@ void deleteFile(fs::FS &fs, const char * path){
 }
 
 
-
-void readDateTime(){
-  Year = myGNSS.getYear();
-  Month = myGNSS.getMonth();
-  Day = myGNSS.getDay();
-  Hour = myGNSS.getHour();
-  Minute = myGNSS.getMinute();
-  Second = myGNSS.getSecond();
-}
-
 void  printDateTime() {  
   Serial.print(Year);
   Serial.print("-");
@@ -382,63 +372,63 @@ void  printDateTime() {
 }
 
 void  Write_header() {  
-  headerFile.println(F("# GNSS and Laser altimeter log file"));
-  headerFile.print("# Date: ");
-  headerFile.print(Year);
-  headerFile.print("-");
-  headerFile.print(Month);
-  headerFile.print("-");
-  headerFile.println(Day);
-  headerFile.print("# Time: ");
-  headerFile.print(Hour);
-  headerFile.print(":");
-  headerFile.print(Minute);
-  headerFile.print(":");
-  headerFile.println(Second);
-  headerFile.println(F("# --------------------------------------"));
-  headerFile.print(F("# UBX binary data are in  file: "));
-  headerFile.print(dataFileName);
-  headerFile.println(F(" "));
+  dataFile.println(F("# INS and Laser altimeter log file"));
+  dataFile.print("# Date: ");
+  dataFile.print(Year);
+  dataFile.print("-");
+  dataFile.print(Month);
+  dataFile.print("-");
+  dataFile.println(Day);
+  dataFile.print("# Time: ");
+  dataFile.print(Hour);
+  dataFile.print(":");
+  dataFile.print(Minute);
+  dataFile.print(":");
+  dataFile.println(Second);
+  dataFile.println(F("# --------------------------------------"));
+  // dataFile.print(F("# UBX binary data are in  file: "));
+  // dataFile.print(dataFileName);
+  // dataFile.println(F(" "));
 }
 
 
 
-void  log_settings() {  
-  headerFile.println(F("# --------------------------------------"));
-  headerFile.print(F("Script version: "));
-  headerFile.println(version);
-  headerFile.println(F("Measurements settings: "));
-  headerFile.print(F("IMU calibration: "));
-  headerFile.println(IMUcalibration);
-  headerFile.print(F("NavigationFrequency: "));
-  headerFile.println(NavigationFrequency);
-  headerFile.print(F("DynamicModel: "));
-  headerFile.println(DynamicModel);
-  headerFile.print(F("log_NAVATT: "));
-  headerFile.println(log_NAVATT);
-  headerFile.print(F("log_NAVPVT: "));
-  headerFile.println(log_NAVPVT);
-  headerFile.print(F("log_NAVPVAT: "));
-  headerFile.println(log_NAVPVAT);
-  headerFile.print(F("log_ESFINS: "));
-  headerFile.println(log_ESFINS);
-  headerFile.print(F("log_ESFRAW: "));
-  headerFile.println(log_ESFRAW);
-  headerFile.print(F("log_ESFMEAS: "));
-  headerFile.println(log_ESFMEAS);
-  headerFile.print(F("log_ESFALG: "));
-  headerFile.println(log_ESFALG);
-  headerFile.print(F("log_RMX : "));
-  headerFile.println(log_RMX );
-  headerFile.println(F("# --------------------------------------"));
-}
+// void  log_settings() {  
+  // dataFile.println(F("# --------------------------------------"));
+  // dataFile.print(F("Script version: "));
+  // dataFile.println(version);
+  // dataFile.println(F("Measurements settings: "));
+  // dataFile.print(F("IMU calibration: "));
+  // dataFile.println(IMUcalibration);
+  // dataFile.print(F("NavigationFrequency: "));
+  // dataFile.println(NavigationFrequency);
+  // dataFile.print(F("DynamicModel: "));
+  // dataFile.println(DynamicModel);
+  // dataFile.print(F("log_NAVATT: "));
+  // dataFile.println(log_NAVATT);
+  // dataFile.print(F("log_NAVPVT: "));
+  // dataFile.println(log_NAVPVT);
+  // dataFile.print(F("log_NAVPVAT: "));
+  // dataFile.println(log_NAVPVAT);
+  // dataFile.print(F("log_ESFINS: "));
+  // dataFile.println(log_ESFINS);
+  // dataFile.print(F("log_ESFRAW: "));
+  // dataFile.println(log_ESFRAW);
+  // dataFile.print(F("log_ESFMEAS: "));
+  // dataFile.println(log_ESFMEAS);
+  // dataFile.print(F("log_ESFALG: "));
+  // dataFile.println(log_ESFALG);
+  // dataFile.print(F("log_RMX : "));
+  // dataFile.println(log_RMX );
+  // dataFile.println(F("# --------------------------------------"));
+// }
 
 
 void  log_Laser_settings() {  
-  headerFile.println(F(" "));
-  headerFile.println(F("# --------------------------------------"));
-  headerFile.println(F("Laser settings: "));
-  headerFile.println(F("# --------------------------------------"));
+  dataFile.println(F(" "));
+  dataFile.println(F("# --------------------------------------"));
+  dataFile.println(F("Laser settings: "));
+  dataFile.println(F("# --------------------------------------"));
   RS232.write(0x1B);
   delay(100);
   while(RS232.read() >= 0) ; // flush the receive buffer.
@@ -449,90 +439,71 @@ void  log_Laser_settings() {
   while(millis() < (startTime + 500)){
     bitesToWrite=RS232.available();
     RS232.readBytes(Buffer_lasersetting, bitesToWrite);
-    headerFile.write( Buffer_lasersetting, bitesToWrite);
+    dataFile.write( Buffer_lasersetting, bitesToWrite);
 //    Serial.write( Buffer_lasersetting, bitesToWrite);
     delay(1);
   }
   delete[] Buffer_lasersetting;
 //  while ( RS232.available()){ 
-//	headerFile.print(RS232.read());
+//	dataFile.print(RS232.read());
 //  } 
-  headerFile.println(F("# --------------------------------------"));
-  headerFile.println(F(" "));
+  dataFile.println(F("# --------------------------------------"));
+  dataFile.println(F(" "));
 }
+
+
 
 // Make new files in SD card. file names are derived from GNSS time if available. 
 void  makeFiles(fs::FS &fs) {  
   Serial.println(F("Making new files"));
 
-  // Check for GPS to have good time and date
-  int count = 0;
-  while (1) {  // Check for GPS to have good time and date
-    ++count;
-    if ((myGNSS.getTimeValid() == true) && (myGNSS.getDateValid() == true)) {
-        Serial.print(F("Date and time are valid. It is: "));
-        readDateTime();
-        printDateTime();
-        Serial.println();
-        break;
-    }else if (count > 3) {
-        Year = 2000 ;
-        Month = 01;
-        Day = 01;
-        Hour = random(23) ;
-        Minute = random(60);
-        Second = random(60);
-        break;
-        Serial.println(F("GPS is not good. Making random filename with date:"));
-        printDateTime();
-        Serial.println(); 
-    }
+  // // Check for GPS to have good time and date
+  // int count = 0;
+  // while (1) {  // Check for GPS to have good time and date
+    // ++count;
+    // if ((myGNSS.getTimeValid() == true) && (myGNSS.getDateValid() == true)) {
+        // Serial.print(F("Date and time are valid. It is: "));
+        // readDateTime();
+        // printDateTime();
+        // Serial.println();
+        // break;
+    // }else if (count > 3) {
+        // Year = 2000 ;
+        // Month = 01;
+        // Day = 01;
+        // Hour = random(23) ;
+        // Minute = random(60);
+        // Second = random(60);
+        // break;
+        // Serial.println(F("GPS is not good. Making random filename with date:"));
+        // printDateTime();
+        // Serial.println(); 
+    // }
     
-    Serial.println(F("Date or time are not valid. Waiting for better GPS connection."));
-    readDateTime();
-    Serial.print(F("Date and time: "));
-    printDateTime();
-    Serial.println();
-    LED_blink(1000, 3);
-  }
+    // Serial.println(F("Date or time are not valid. Waiting for better GPS connection."));
+    // readDateTime();
+    // Serial.print(F("Date and time: "));
+    // printDateTime();
+    // Serial.println();
+    // LED_blink(1000, 3);
+  // }
   
-  sprintf(headerFileName, "/a%02d%02d%02d_%02d%02d.txt", Year%1000 ,Month ,Day ,Hour,Minute);  // create name of header file
-  sprintf(dataFileName, "/a%02d%02d%02d_%02d%02d.ubx", Year%1000 ,Month ,Day ,Hour,Minute);   // create name of data file
-//  strcpy(headerFileName, "/data.txt");  // create name of header file
-//  strcpy(dataFileName, "/data.ubx");   // create name of data file
-  Serial.println(headerFileName);
+  
+  // sprintf(dataFileName, "/INS_Laser%02d%02d%02d_%02d%02d.dat", Year%1000 ,Month ,Day ,Hour,Minute);   // create name of data file
+   sprintf(dataFileName, "/testfile.csv");   // create name of data file
   Serial.println(dataFileName);
-  
-  
-
-  Serial.print("Making header file.");
-  headerFile = fs.open(headerFileName, FILE_WRITE);
-  if(!headerFile){
-    Serial.println(F("Failed to create header file! Freezing..."));
-    Serial.println(headerFileName);
-    while (1);
-  }
-  
-  Serial.print(F("created file: "));
-  Serial.println(headerFileName);
-  Write_header();
-  delay(100);
-  log_settings();
-  delay(100);
-  log_Laser_settings();
-  delay(100);
-  headerFile.close(); // Close the data file
-
-  Serial.print("Making data file:");
-  Serial.println(dataFileName);
-  
   dataFile=fs.open(dataFileName, FILE_WRITE);
-  // dataFile = SD.open("/data2.ubx", FILE_WRITE);
   if(!dataFile){
-    Serial.println(F("Failed to create header file! Freezing..."));
+    Serial.println(F("Failed to create data file! Freezing..."));
     Serial.println(dataFileName);
     while (1);
   }
+  delay(100);
+  // log_settings();
+  delay(100);
+//  log_Laser_settings();
+  delay(100);
+
   strcpy(txString,"");
   strcat(txString,"Created file: ");
   strcat(txString,dataFileName);  
@@ -542,81 +513,85 @@ void  makeFiles(fs::FS &fs) {
 
 
 void  Write_stop() {  
-  headerFile.print(F("Measurements stopped on: "));
-  headerFile.print(Year);
-  headerFile.print("-");
-  headerFile.print(Month);
-  headerFile.print("-");
-  headerFile.print(Day);
-  headerFile.print(", ");
-  headerFile.print(Hour);
-  headerFile.print(":");
-  headerFile.print(Minute);
-  headerFile.print(":");
-  headerFile.println(Second);
-  headerFile.println(F("# --------------------------------------"));
+  dataFile.print(F("Measurements stopped on: "));
+  // dataFile.print(Year);
+  // dataFile.print("-");
+  // dataFile.print(Month);
+  // dataFile.print("-");
+  // dataFile.print(Day);
+  // dataFile.print(", ");
+  // dataFile.print(Hour);
+  // dataFile.print(":");
+  // dataFile.print(Minute);
+  // dataFile.print(":");
+  // dataFile.println(Second);
+  // dataFile.println(F("# --------------------------------------"));
 }
 
+void writeToBuffer(){
+  // move BufferHead if circular buffer is full
+  int nDump;
+  if(BufferTail>=BufferHead){
+    nDump=bitesToWrite-(myBufferSize+BufferHead-BufferTail);
+  } else{
+    nDump=bitesToWrite-(BufferHead-BufferTail);
+  }
+  if (nDump>=0){
+    Serial.print("Data buffer is getting full. Dumping N data:");
+    Serial.println(nDump+1);
+    BufferHead=(BufferHead+nDump+1)%myBufferSize;
+  }
+  
+  // write data to buffer
+  if ((BufferTail+bitesToWrite)<myBufferSize){
+    for(int i=0; i<bitesToWrite;i++){
+      myBuffer[BufferTail]=tempBuffer[i];
+      BufferTail++;
+    }
+  }else{
+    int a=myBufferSize-BufferTail;
+    for(int i=0; i<a;i++){
+      myBuffer[BufferTail]=tempBuffer[i];
+      BufferTail++;
+    }
+    BufferTail=0;
+    for(int i=0; i<(bitesToWrite-a);i++){
+      myBuffer[BufferTail]=tempBuffer[i+a];
+      BufferTail++;
+    }
+  }
 
-
-// setting up GPS 
-void setupGNSS(){ 
-          
-    if (log_NAVPVT) {
-      // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
-      myGNSS.setAutoPVT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
-      myGNSS.logNAVPVT(); // Enable NAV PVT data logging
-      }
-    if (log_NAVPVAT) {
-      // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
-      myGNSS.setAutoNAVPVAT(true, false); // Enable automatic NAV PVT messages without callback to printPVTdata
-      myGNSS.logNAVPVAT(); // Enable NAV PVT data logging
-    }
-    else {
-      // myGNSS.setAutoPVTcallback(&printPVTdata); // Enable automatic NAV PVT messages with callback to printPVTdata
-      myGNSS.setAutoNAVPVAT(false, false); // Enable automatic NAV PVT messages without callback to printPVTdata
-      myGNSS.logNAVPVAT(); // Enable NAV PVT data logging
-    }
-    if (log_NAVATT) {
-      myGNSS.setAutoNAVATT(true, false); 
-      myGNSS.logNAVATT(); 
-    }
-    if (log_ESFINS ) {
-       myGNSS.setAutoESFINS(true, false); 
-       myGNSS.logESFINS();
-    }
-    if (log_ESFRAW ) {     
-      myGNSS.setAutoESFRAW(true, false);    
-      myGNSS.logESFRAW(); 
-    }
-    if (log_ESFMEAS) {
-      myGNSS.setAutoESFMEAS(true, false); 
-      myGNSS.logESFMEAS();
-    }
-    if (log_ESFALG ) {
-      myGNSS.setAutoESFALG(true, false); 
-      myGNSS.logESFALG(); 
-    }  
-    if (log_RMX ) {
-      myGNSS.disableUBX7Fcheck(); // RAWX data can legitimately contain 0x7F, so we need to disable the "7F" check in checkUbloxI2C
-      myGNSS.setAutoRXMSFRBX(true, false); // Enable automatic RXM SFRBX messages: without callback; without implicit update
-      myGNSS.logRXMSFRBX(); // Enable RXM SFRBX data logging
-      myGNSS.setAutoRXMRAWX(true, false); // Enable automatic RXM RAWX messages: without callback; without implicit update
-      myGNSS.logRXMRAWX(); // Enable RXM RAWX data logging
-    }
-    
-	  if (log_STATUS) {
-      myGNSS.logESFSTATUS();
-	  myGNSS.logESFALG();
-    }
-    
-	  myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
-   
-    Serial.println(F("GPS setting updated"));
-    strcat(txString,"GPS setting updated");
+  Serial.print("Data in Buffer:");
+  Serial.println((myBufferSize+BufferTail -BufferHead)%myBufferSize);
 }
 
+void startLogging(){
+  BLE_message=true;
+    
+  makeFiles(SD);
+  delay(500);
 
+  lastPrint = millis(); // Initialize lastPrint
+  logTime_laser  = millis(); // logTime_laser
+  logTime_IMX5 = logTime_laser ; 
+  BufferTail=0;
+  BufferHead=0;
+
+  // setting up GPS for automatic messages
+  setupINS();
+  delay(100);
+
+  //start Laser measuremens
+//  RS232.write("DT");
+//  RS232.write(0x0D);
+//  
+  delay(100);
+  
+  while(RS232.read() >= 0) ; // flush the receive buffer.
+  while(IMX5.read() >= 0) ; // flush the receive buffer.
+  strcpy(txString,"Starting logging data!");
+  Serial.println(txString);
+}
 
 
 
@@ -631,200 +606,33 @@ void stop_logging(fs::FS &fs) {
 	logging = false; // Set flag to false
 	BLE_message=true;
 	strcpy(txString,"Turning datalogging OFF!");
-
-	if (log_RMX ) {
-	  myGNSS.setAutoRXMSFRBX(false, false); // Disable the automatic RXM SFRBX messages
-	  myGNSS.setAutoRXMRAWX(false, false); // Disable the automatic RXM RAWX messages
-	}
-	if (log_NAVPVT) {
-	  myGNSS.setAutoPVT(false, false); // Disable  automatic NAV PVT messages without callback to printPVTdata
-	  }
-	if (log_NAVPVAT) {
-	  myGNSS.setAutoNAVPVAT(false, false); // Disable  automatic NAV PVAT messages without callback to printPVTdata
-	}
-	if (log_NAVATT) {
-	  myGNSS.setAutoNAVATT(false, false); 
-	}
-	if (log_ESFINS ) {
-	   myGNSS.setAutoESFINS(false, false); 
-	}
-	if (log_ESFRAW ) {     
-	  myGNSS.setAutoESFRAW(false, false);    
-	}
-	if (log_ESFMEAS) {
-	  myGNSS.setAutoESFMEAS(false, false); 
-	}
-	if (log_ESFALG ) {
-	  myGNSS.setAutoESFALG(false, false); 
-	}
-  
-  
-  delay(1000); // Allow time for any remaining messages to arrive
-  myGNSS.checkUblox(); // Process any remaining data
-  uint16_t remainingBytes = myGNSS.fileBufferAvailable(); // Check if there are any bytes remaining in the file buffer
-  
-  while (remainingBytes > 0 and log_GPS) // While there is still data in the file buffer
-  {
-    digitalWrite(LED_BUILTIN, HIGH); // Flash LED_BUILTIN while we write to the SD card
-    uint8_t myBuffer[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
-    uint16_t bytesToWrite = remainingBytes; // Write the remaining bytes to SD card sdWriteSize bytes at a time
-    if (bytesToWrite > sdWriteSize)
-    {
-      bytesToWrite = sdWriteSize;
-    }
-
-    myGNSS.extractFileBufferData((uint8_t *)&myBuffer, bytesToWrite); // Extract bytesToWrite bytes from the UBX file buffer and put them into myBuffer
-    dataFile.write(myBuffer, bytesToWrite); // Write bytesToWrite bytes from myBuffer to the ubxDataFile on the SD card
-    
-    bytesWritten += bytesToWrite; // Update bytesWritten
-    remainingBytes -= bytesToWrite; // Decrement remainingBytes
-  }
-  digitalWrite(LED_BUILTIN, LOW); // Turn LED_BUILTIN off
-
-  Serial.print(F("The total number of bytes written to SD card is: ")); // Print how many bytes have been written to SD card
-  Serial.println(bytesWritten);
-
-  uint16_t maxBufferBytes = myGNSS.getMaxFileBufferAvail(); // Show how full the file buffer has been (not how full it is now)
-  Serial.print(F("The maximum number of bytes which the file buffer has contained is: "));
-  Serial.println(maxBufferBytes);
   
   
 	// output file string
 	char filesstring[50];
-	sprintf(filesstring, " Files: %s, %s",headerFileName, dataFileName);
+	sprintf(filesstring, " Files: %s, %s",dataFileName, dataFileName);
 	strcat(txString,filesstring);
 	Serial.println("Turning datalogging OFF!");
 	Serial.println(filesstring);
 	LED_blink(25, 4);
-    dataFile.close(); // Close the data file
+    Write_stop();
+	dataFile.close(); // Close the data file
 	Serial.println("Datafile closed.");
-	
-	headerFile = fs.open(headerFileName, FILE_APPEND);
-	Serial.println("Ready to append");  
-	LED_blink(25, 4);
-	readDateTime();
-	Write_stop();
-	headerFile.print(F("The total number of bytes written to SD card is: ")); // Print how many bytes have been written to SD card
-	headerFile.println(bytesWritten);
-	headerFile.print(F("The maximum number of bytes which the file buffer has contained is: "));
-	headerFile.println(maxBufferBytes);
-    headerFile.close(); 
-    Serial.println("Header file closed.");
-//    listDir(SD, "/", 0);
 	Serial.println("Measurement stopped successfully"); 
-  
 }
-
 
 
 // Restart data logging process
 void restart_logging() {
-  logging = false;
-  BLE_message=true;
-  strcpy(txString,"Turning ON datalogging with new files!");
-  Serial.println(txString);
+  if(logging) {
+    strcpy(txString,"Already logging.");
+    Serial.println(txString);
+    return;
+  }
+  
   LED_blink(100, 5);
-
-  makeFiles(SD);
-  delay(500);
   logging = true;
-  setupGNSS();
-  myGNSS.clearFileBuffer();  // flush the receive buffer.
-  while(RS232.read() >= 0) ; // flush the receive buffer.
-  RS232.write("DT");
-  RS232.write(0x0D);
-  
-  lastPrint = millis(); // Initialize lastPrint
-  logTime_laser  = millis(); // logTime_laser
-  
-  //call for GPS status messages
-  if (log_STATUS ){   
-    myGNSS.getESFSTATUS();
-    myGNSS.getESFALG();
-  }
-
-  
-}
-
-
-// set new GNSS NavigationRate
-void setRate( String rxValue){  
-   if (!logging) {
-    int index = rxValue.indexOf(":");\
-    int index2 = rxValue.indexOf(":",index+1);
-    if (index !=-1 and index2 !=-1){
-//      Serial.println(rxValue);
-//      sprintf(txString,"index1: %d, index2: %d",index,index2);
-//      Serial.println(txString);
-//      Serial.println(rxValue.substring(index+1,index2));
-//      Serial.println(rxValue.substring(index+1,index2).toInt());
-      NavigationFrequency = rxValue.substring(index+1,index2).toInt();
-      BLE_message=true;
-      sprintf(txString,"New navigation frequency: %d",NavigationFrequency);
-      Serial.println(txString);
-      myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
-    } else {
-      BLE_message=true;
-      sprintf(txString,"New frequency can not be parsed form string '%s'. Valid format is 'RATE:2:'",rxValue);
-      Serial.println(txString);
-    }
-  } else {
-    BLE_message=true;
-    strcpy(txString,"Datalogging running. Can't change data frequency now. First stop measurment!");
-    Serial.println(txString);
-  }
-}
-
-
-
-// change Dynamic Model 
-void setDynamicModel( String rxValue){  
-   if (!logging) {
-    int index = rxValue.indexOf(":");\
-    int index2 = rxValue.indexOf(":",index+1);
-    if (index !=-1 and index2 !=-1){
-
-      DynamicModel = (dynModel)rxValue.substring(index+1,index2).toInt();
-      BLE_message=true;
-      sprintf(txString,"New dynamic navigation model: %d",DynamicModel);
-      Serial.println(txString);
-      IMUcalibration=true;      //New calibration is necessary after changing dynamic model
-      myGNSS.setDynamicModel(DynamicModel); //Set new Dynamic Model for GNSS solution.
-    } else {
-      BLE_message=true;
-      uint8_t currentDynmodel= myGNSS.getDynamicModel(DynamicModel); //Set new Dynamic Model for GNSS solution.
-      sprintf(txString,"Current dynamic model: %d. Format for changing model:DYNMODEL:4:",currentDynmodel);
-      Serial.println(txString);
-    }
-  } else {
-    BLE_message=true;
-    strcpy(txString,"Datalogging running. Can't change dynamic navigation plattform now. First stop measurment!");
-    Serial.println(txString);
-  }
-}
-
-
-// change RMX log setting
-void setLogRMX( String rxValue){  
-   if (!logging) {
-    int index = rxValue.indexOf(":");\
-    int index2 = rxValue.indexOf(":",index+1);
-    if (index !=-1 and index2 !=-1){
-      log_RMX = (rxValue.substring(index+1,index2).toInt() > 0);
-      BLE_message=true;
-      sprintf(txString,"New RMX log setting is: %d",log_RMX );
-      Serial.println(txString);
-      
-    } else {
-      BLE_message=true;
-      sprintf(txString,"RMX log setting can not be parsed form string '%s'. Valid format is 'LOGRMX:0:'",rxValue);
-      Serial.println(txString);
-    }
-  } else {
-    BLE_message=true;
-    strcpy(txString,"Datalogging running. Can't change RMX log setting now. First stop measurment!");
-    Serial.println(txString);
-  }
+  startLogging();
 }
 
 
@@ -853,29 +661,7 @@ void setLogFlag( String rxValue, bool &flag, String flagname){
 }
 
 
-// change setting for regular check for IMU calibration
-void  setIMUcal( String rxValue){  
-   if (!logging) {
-    int index = rxValue.indexOf(":");\
-    int index2 = rxValue.indexOf(":",index+1);
-    if (index !=-1 and index2 !=-1){
-      IMUcalibration = (rxValue.substring(index+1,index2).toInt() > 0);
-      BLE_message=true;
-      sprintf(txString,"New IMUcalibration setting is: %d",IMUcalibration );
-      Serial.println(txString);
-      
-    } else {
-      BLE_message=true;
-      sprintf(txString,"IMUcalibration setting can not be parsed form string '%s'. Valid format is 'IMUCAL:0:'",rxValue);
-      Serial.println(txString);
-    }
-  } else {
-    BLE_message=true;
-    strcpy(txString,"Datalogging running. Can't change IMUcalibration setting now. First stop measurment!");
-    Serial.println(txString);
-  }
-   Send_tx_String(txString);
-}
+
 
 
 void readFiles( String rxValue){  
@@ -900,8 +686,8 @@ void readFiles( String rxValue){
       
     } else if (index =-1){
       Serial.print("Reading file:");
-      Serial.println(headerFileName);
-      readFile(SD,headerFileName);
+      Serial.println(dataFileName);
+      readFile(SD,dataFileName);
       Serial.print("Reading file:");
       Serial.println(dataFileName);
       readFile(SD,dataFileName);
@@ -935,80 +721,6 @@ void getFileList(){
 }
 
 
-// Get IMU data and send them over BLE+serial for manual check
-void  check_IMU(){  
-   Send_tx_String(txString);
-   strcpy(txString,"");
-   if (!logging) {
-		myGNSS.getESFSTATUS();  // call for ESF-STATUS message 
-		strcat(txString,"IMU check \n# --------------------------------------\n");  
-		strcat(txString,"Fusion Mode: ");  
-		sprintf(subString,"%d",myGNSS.packetUBXESFSTATUS->data.fusionMode);  
-		strcat(txString,subString); 
-		
-		strcat(txString,"\nIMU sensors status: "); // See interface description for explanation of values.
-		for (uint16_t i = 0; i <7 ; i++)
-		{
-		sprintf(subString,"\nSensor %d:",i );  
-        strcat(txString,subString); 
-		int st1 = myGNSS.packetUBXESFSTATUS->data.status[i].sensStatus1.all;
-        int st2 = myGNSS.packetUBXESFSTATUS->data.status[i].sensStatus2.all;
-        sprintf(subString,"type %d, ",st1/4);
-        strcat(txString,subString); 
-        sprintf(subString,"used %d,",st1%4/2);
-        strcat(txString,subString); 
-        sprintf(subString,"ready %d,",st1%2);
-        strcat(txString,subString); 
-        sprintf(subString,"calsts %d,",st2/4);
-        strcat(txString,subString); 
-        sprintf(subString,"timests %d,",st2%4);
-        strcat(txString,subString); 
-			  //sprintf(subString,"\nSensor %d type %d, used %d ready %d calsts %d timests %d",i, st1/4, st1%4/2, st1%2, st2/4, st2%4);   
-        //        Serial.print(st1);
-        //        Serial.println(st2); 
-			}
-  } else {
-    strcpy(txString,"Datalogging running. Can't run IMU _check now!");
-  }
-  Send_tx_String(txString);
-}
-
-
-// Get attitude angles from IMU anf GPS coordinates and send them over BLE+serial for manual check
-void  check_attitude(){  
-   Send_tx_String(txString);
-   strcpy(txString,"");
-   if (!logging) {
-      myGNSS.getNAVPVAT();  // call for NAVPVAT message 
-      delay(500);
-//      Serial.println("got PVAT");
-      strcat(txString,"GNSS and IMU check \n# --------------------------------------\n");  
-      strcat(txString,"Roll angle (deg): "); 
-      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.vehRoll)/100000);  
-      strcat(txString,subString); 
-      strcat(txString,"\nPitch angle (deg): ");  
-      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.vehPitch)/100000);  
-      strcat(txString,subString); 
-      strcat(txString,"\nHeading angle (deg): ");  
-      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.vehHeading)/100000);  
-//      Serial.println("ATT saved");
-      strcat(txString,subString); 
-      strcat(txString,"\nLatitude (deg): ");  
-      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.lat)/10000000);  
-      strcat(txString,subString); 
-      strcat(txString,"\nLongitude (deg): ");
-      sprintf(subString,"%.3f",(float)(myGNSS.packetUBXNAVPVAT->data.lon)/10000000);  
-      strcat(txString,subString); 
-      strcat(txString,"\nElevation (m a.s.l.): ");  
-      sprintf(subString,"%.2f",(float)(myGNSS.packetUBXNAVPVAT->data.hMSL)/1000);  
-      strcat(txString,subString); 
-      strcat(txString," \n# --------------------------------------\n"); 
-//      Serial.println("GNSS saved");
-  } else {
-    strcpy(txString,"Datalogging running. Can't run IMU _check now!");
-  }
-  Send_tx_String(txString);
-}
 
 
 // Get Laser data for 1 second and send it over BLE and serial
@@ -1061,6 +773,8 @@ void  commands(){
    strcpy(txString,"");
 }
 
+
+
 // /////////////////////////////////////////////
 // ---------------------------------------------
 // BLE funtions und code
@@ -1093,76 +807,11 @@ class MyCallbacks: public BLECharacteristicCallbacks {
            BLE_start=true;
         } else if (rxValue.find("STOP") != -1) {
            BLE_stop=true;
-		    } else if (rxValue.find("CHECKIMU") != -1) {
-		       check_IMU();
-        } else if (rxValue.find("CHECKATT") != -1) {
-           check_attitude( );
-           check_laser();
         } else if (rxValue.find("CHECKLASER") != -1) {
            check_laser();
         } else if (rxValue.find("COMS") != -1 or rxValue.find("?") != -1) {
            commands();
-        } else if (rxValue.find("RATE") != -1) {
-           char passValue[40];
-           for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-               setRate(passValue);
-        } else if (rxValue.find("DYNMODEL") != -1) {
-           char passValue[40];
-           for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setDynamicModel(passValue);
-		} else if (rxValue.find("LOGRMX") != -1) {
-           char passValue[40];
-		   for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setLogRMX(passValue);
-        } else if (rxValue.find("IMUCAL") != -1) {
-           char passValue[40];
-		   for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setIMUcal(passValue);
-		} else if (rxValue.find("NAVPVT") != -1) {
-           char passValue[40];
-		   for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setLogFlag( passValue, log_NAVPVT, "NAVPVT");
-		} else if (rxValue.find("NAVATT") != -1) {
-           char passValue[40];
-		   for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setLogFlag( passValue, log_NAVATT, "NAVATT");
-		} else if (rxValue.find("NAVPVAT") != -1) {
-           char passValue[40];
-		   for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setLogFlag( passValue, log_NAVPVAT, "NAVPVAT");
-		} else if (rxValue.find("ESFINS") != -1) {
-           char passValue[40];
-		   for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setLogFlag( passValue, log_ESFINS, "ESFINS");
-		} else if (rxValue.find("ESFRAW") != -1) {
-           char passValue[40];
-		   for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setLogFlag( passValue, log_ESFRAW, "ESFRAW");
-		} else if (rxValue.find("ESFMEAS") != -1) {
-           char passValue[40];
-		   for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setLogFlag( passValue, log_ESFMEAS, "ESFMEAS");
-		} else if (rxValue.find("ESFALG") != -1) {
-           char passValue[40];
-		   for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setLogFlag( passValue, log_ESFALG, "ESFALG");
-		} else if (rxValue.find("LOGGPS") != -1) {
-           char passValue[40];
-       for (int i = 0; i < rxValue.length(); i++){
-               passValue[i] = rxValue[i];}
-           setLogFlag( passValue, log_GPS, "LOGGPS");
-    }else{
+		}else{
           BLE_message=true;
           strcpy(txString,"Input can not be parsed retry!");
           Serial.println(txString);
@@ -1228,39 +877,21 @@ void setup(){
     //--------------------
     RS232.begin(baudrateRS232,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
     RS232.setRxBufferSize(Laser_BufferSize);
-    delay(500);
-  	RS232.write(0x1B);  // stop sending data
-    delay(500);
-  	RS232.write("SD 0 3");  // set data format
-  	RS232.write(0x0D);  
-    delay(100);
+//    delay(500);
+//  	RS232.write(0x1B);  // stop sending data
+//    delay(500);
+//  	RS232.write("SD 0 3");  // set data format
+//  	RS232.write(0x0D);  
+//    delay(100);
 
 
-    // Setup GPS connection
+    // Setup INS connection
     //--------------------
-    Serial.println("Connecting to GPS");
-    Wire.begin();
+    Serial.println("Connecting to INS");
+    IMX5.begin(baudrateIMX5,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
+    IMX5.setRxBufferSize(IMX5_BufferSize);
+    Serial.println("Started serial to IMX5");
 
-    myGNSS.setFileBufferSize(fileBufferSize); // setFileBufferSize must be called _before_ .begin
-   
-    if (myGNSS.begin() == false) //Connect to the u-blox module using Wire port
-    {
-      Serial.println(F("u-blox GNSS not detected at default I2C address. Please check wiring. Freezing."));
-      while (1){
-        LED_blink(200, 2);
-        delay(2000);
-        if (myGNSS.begin() == true) { //Connect to the u-blox module using Wire port
-          Serial.println(F("u-blox GNSS detected I2C address. Reconnection was successfull."));
-          break;
-        }
-      }
-    }
-    
-    myGNSS.setI2COutput(COM_TYPE_UBX); //Set the I2C port to output UBX only (turn off NMEA noise)
-    myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT); //Save (only) the communications port settings to flash and BBR
-//    myGNSS.setDynamicModel(DynamicModel);  
-    myGNSS.setNavigationFrequency(NavigationFrequency); //Produce  navigation solution at given frequency
-    Serial.println(F("Connection to GPS succesful"));
 
 
     // Setup BLE connection
@@ -1270,8 +901,6 @@ void setup(){
 
     // Setup SD connection
     //--------------------
-    myBuffer_laser = new uint8_t[sdWriteSize_Laser*3]; // Create our own buffer to hold the data while we write it to SD card
-    
     Serial.print("CD pin value:");
     Serial.println(digitalRead(CD_pin));
     if (!digitalRead(CD_pin)){
@@ -1286,7 +915,7 @@ void setup(){
       }
     }
 
-	  spi.begin(SCK, MISO, MOSI, CS);							   
+	spi.begin(SCK, MISO, MOSI, CS);							   
     if(!SD.begin(CS,spi,SPI_rate)){
         Serial.println("Card Mount Failed");
         while (1);
@@ -1311,38 +940,15 @@ void setup(){
     Serial.printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
     Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
     
+    Serial.println(F("Setup completeded."));
     
     if (logging) {  
-      makeFiles(SD);
+      startLogging();
     } else {
       BLE_message=true;
       strcpy(txString,"Waiting for command 'START' over Serial of BLE for starting logging data!");
       Send_tx_String(txString);
     }
-
-    // setting up GPS for automatic messages
-  	setupGNSS();
-  	delay(200);
-	
-    //call for GPS status messages
-    if (log_STATUS ){   
-    	myGNSS.getESFSTATUS();
-    	myGNSS.getESFALG();
-    }
-    
-    //Check fusion mode
-    if (IMUcalibration){   
-      checkIMUcalibration();
-      Serial.print(txString);
-    }
-    
-	//start Laser measuremens
-	RS232.write("DT");
-    RS232.write(0x0D);
-	
-    Serial.println(F("Setup completeded."));
-    lastPrint = millis(); // Initialize lastPrint
-    logTime_laser  = millis(); // logTime_laser  
 }
 
 
@@ -1352,81 +958,104 @@ void loop(){
   
   if (logging){    // if logging is avctive check for GNSS data and save them to SD card in binary file
     
-    //  GNSS data
+    //  INS data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    myGNSS.checkUblox(); // Check for the arrival of new data and process it.
-    while (myGNSS.fileBufferAvailable() >= sdWriteSize and ((millis()-logTime_laser) < Laser_log_intervall) and log_GPS) // Check to see if we have at least sdWriteSize waiting in the buffer
-    {
-//      digitalWrite(LED_BUILTIN, HIGH); // Flash LED_BUILTIN each time we write to the SD card
-
-      uint8_t myBuffer[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
-
-      myGNSS.extractFileBufferData((uint8_t *)&myBuffer, sdWriteSize); // Extract exactly sdWriteSize bytes from the UBX file buffer and put them into myBuffer
-
-      dataFile.write(myBuffer, sdWriteSize); // Write exactly sdWriteSize bytes from myBuffer to the ubxDataFile on the SD card
-
-      bytesWritten += sdWriteSize; // Update bytesWritten
-
-      // In case the SD writing is slow or there is a lot of data to write, keep checking for the arrival of new data
-//      myGNSS.checkUblox(); // Check for the arrival of new data and process it.
-
-//      digitalWrite(LED_BUILTIN, LOW); // Turn LED_BUILTIN off again
-      Serial.print(".");
-	    delay(20);
+    if ( IMX5.available() >= WriteSize_IMX5) {   
+      bitesToWrite=IMX5.available();
+      if(tempBufferSize<bitesToWrite){
+		    bitesToWrite=tempBufferSize;  
+	    }
+	  
+	    Serial.print("Dump IMX5 data to buffer:");
+  	  Serial.println(bitesToWrite);
+  	  IMX5.readBytes(tempBuffer, bitesToWrite);
+      writeToBuffer();
+      Serial.write(tempBuffer, bitesToWrite);
+      logTime_IMX5=millis();
     }
+	
+	
 
     //  Laser data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if ( RS232.available() >= sdWriteSize_Laser) {   
+    if ( RS232.available() >= WriteSize_Laser) {   
       bitesToWrite=RS232.available();
-      if (bitesToWrite>sdWriteSize_Laser*2) {
-        bitesToWrite=sdWriteSize_Laser*2;
-        Serial.println("More bits than Writesize");
-      }
-      Serial.println(",");
-      Serial.println(bitesToWrite);
-      dataFile.println(" ");
-      dataFile.print("# iTOW ");
-      dataFile.println(myGNSS.packetUBXNAVPVAT->data.iTOW);
-//      Serial.println("Got time");
-//      while(RS232.available()){
-//        dataFile.write(RS232.read());   
-//      }
-      RS232.readBytes(myBuffer_laser, bitesToWrite);
-//      Serial.println("Got data");
-      dataFile.write( myBuffer_laser, bitesToWrite);
-//      Serial.println("wrote data");
-      dataFile.print("# end ");
-      dataFile.println(myGNSS.packetUBXNAVPVAT->data.iTOW);
-//      Serial.println("end");
-      logTime_laser2  = millis();
+
+  	  if(tempBufferSize<bitesToWrite){
+  		  bitesToWrite=tempBufferSize;  
+  	  }
+	  
+	    Serial.print("Dump Laser data to buffer:");
+  	  Serial.println(bitesToWrite);
+	    RS232.readBytes(tempBuffer, bitesToWrite);
+      writeToBuffer();
+      Serial.write(tempBuffer, bitesToWrite);
+      logTime_laser=millis();
     }
-    logTime_laser  = millis();
 
 
 
+	  //  Write data to SD
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if (millis() > (lastPrint + 5000)) // Print bytesWritten once per 5 seconds
-    {
-      Serial.println(" ");
-      Serial.println(RS232.available());
-      if ((millis()-logTime_laser2) > 5*Laser_log_intervall) {  //Flush RS232 buffer if data were are not read for too long.
-         while(RS232.read() >= 0);
+	  if ( ((myBufferSize+BufferTail-BufferHead)%myBufferSize) > sdWriteSize){
+  		Serial.print("Data in Buffer:");
+  		Serial.println((myBufferSize+BufferTail -BufferHead)%myBufferSize);
+  
+      // write data to buffer
+      if ((BufferHead+sdWriteSize)<myBufferSize){
+        for(int i=0; i<sdWriteSize;i++){
+          tempBuffer[i]=myBuffer[BufferHead];
+          BufferHead++;
+        }
+      }else{
+        int a=myBufferSize-BufferHead;
+        for(int i=0; i<a;i++){
+          myBuffer[i]=tempBuffer[BufferHead];
+          BufferHead++;
+        }
+        BufferTail=0;
+        for(int i=a; i<(sdWriteSize);i++){
+          tempBuffer[i]=myBuffer[BufferHead];
+          BufferHead++;
+        }
       }
-      BLE_message=true;
-      strcpy(txString,".");
-      lastPrint = millis(); // Update lastPrint
-    }
+  		dataFile.write( tempBuffer, sdWriteSize);
+  		Serial.print("Data written:");
+  		Serial.println(sdWriteSize);
+		
+	}
 
-    if (lastTime_logstatus + flush_intervall < millis()){
-      dataFile.flush();
-      lastTime_logstatus  = millis();
-      Serial.println("flushed");
-    }
+     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+     if (millis() > (lastPrint + 10000)) // Print bytesWritten once per 5 seconds
+     {
+        Serial.print("Data in Buffer:");
+        Serial.println((myBufferSize+BufferTail -BufferHead)%myBufferSize);
+        Serial.print("Data in IMX5:");
+        Serial.println(IMX5.available());
+        Serial.print("Data in Laser:");
+        Serial.println(RS232.available());
+		BLE_message=true;
+        strcpy(txString,":");
+        lastPrint = millis(); // Update lastPrint
+	 }
+   if ((millis()-logTime_laser) > Laser_log_intervall and RS232.available()) {  //Flush RS232 buffer if data were are not read for too long.
+	  while(RS232.read() >= 0);
+	  Serial.println("Laser buffer flushed");
+   }
+   if ((millis()-logTime_IMX5) > IMX5_log_intervall and IMX5.available()) {  //Flush RS232 buffer if data were are not read for too long.
+	  while(IMX5.read() >= 0);
+	  Serial.println("IMX5 buffer flushed");
+   }
+
   }
 
+  // if ( IMX5.available()) {     // If anything comes in Serial1 (pins 0 & 1)
+    // Serial.write( IMX5.read());
+  // }
+  // if ( RS232.available()) {     // If anything comes in Serial1 (pins 0 & 1)
+    // Serial.write( IMX5.read());
+  // }
 
-  
   
   //################################# Do other stuff #############################################
   
@@ -1475,20 +1104,12 @@ void loop(){
       } else if (rxValue.indexOf("STOP") != -1) {
         logging = false;
         stop_logging(SD);
-      } else if (rxValue.indexOf("RATE") != -1) {
-        setRate(rxValue);
       } else if (rxValue.indexOf("READ") != -1) {
         readFiles(rxValue);
       } else if (rxValue.indexOf("LIST") != -1) {
         getFileList();
-      } else if (rxValue.indexOf("CHECKATT") != -1) {
-        check_attitude( );
-      } else if (rxValue.indexOf("CHECKLASER") != -1) {
-        check_laser();
       } else if (rxValue.indexOf("COMS") != -1 or rxValue.indexOf("?") != -1)  {
         commands(); 
-      }else if (rxValue.indexOf("LOGGPS") != -1) {
-           setLogFlag( rxValue, log_GPS, "LOGGPS");
       }else{
         BLE_message=true;
         strcpy(txString,"Input can not be parsed retry!");
@@ -1498,18 +1119,6 @@ void loop(){
       }
   }  
   
-    //Check fusion mode
-  if (IMUcalibration  and (millis() - lastTime2 > 10000)){   
-    checkIMUcalibration();
-    Send_tx_String(txString);
-    lastTime2 = millis(); //Update the timer
-  }
-	
-  if (log_STATUS  and (millis() - lastTime_logstatus > 60000)){   
-    myGNSS.getESFSTATUS();
-	  myGNSS.getESFALG();
-    lastTime_logstatus = millis(); //Update the timer
-  }
 
   delay(5);
 }

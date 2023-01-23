@@ -57,8 +57,8 @@ File headerFile; //File containing a header with settings dscription
 // settings altimeter LSD70A
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 //PINs can be changed to any pin. // For Hardware Serial use Pin 16 an 17. SoftwareSerial worked on pins 12 and 27
-int PIN_Rx = 26; //  Hardware RX pin, to PIN10 on IMX5
-int PIN_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
+int PIN_Rx = 16; //  Hardware RX pin, to PIN10 on IMX5
+int PIN_Tx = 17; //  Hardware TX pin, to PIN8 on IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 #define baudrateRS232 115200 

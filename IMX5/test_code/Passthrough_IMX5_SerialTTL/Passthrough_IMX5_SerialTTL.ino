@@ -26,18 +26,20 @@
 
 //HardwareSerial
 #include <HardwareSerial.h>
-HardwareSerial IMX5(2);
+HardwareSerial IMX5(1);
 
-int PIN_Rx = 25; //  Hardware RX pin, to PIN10 on IMX5
-int PIN_Tx = 26; //  Hardware TX pin, to PIN8 on IMX5
+int PIN_Rx = 26; //  Hardware RX pin, to PIN10 on IMX5
+int PIN_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 int baudrateIMX5= 115200 ;
 unsigned long lastTime;
-#define sdWriteSize 256 // Write data to the SD card in blocks of 512 bytes
+#define WriteSize 64 // Write data to the SD card in blocks of 512 bytes
 uint8_t *myBuffer; // A buffer to hold the data while we write it to SD car
+int bitesToWrite;
+int lastTime_logstatus;
 
-char asciiMessage[] = "$ASCB,512,,,2000,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+char asciiMessage[] = "$ASCB,512,,,500,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 char asciiMessageformatted[100];
 
 
@@ -80,7 +82,7 @@ void setup() {
   IMX5.begin(baudrateIMX5,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
   Serial.println("Started serial to IMX5");
 
-  myBuffer = new uint8_t[sdWriteSize]; // Create our own buffer to hold the data while we write it to SD card
+  myBuffer = new uint8_t[WriteSize*2]; // Create our own buffer to hold the data while we write it to SD card
   
 
   if (!FormatAsciiMessage( asciiMessage,  sizeof(asciiMessage),asciiMessageformatted)){
@@ -92,7 +94,7 @@ void setup() {
   }
   while(IMX5.read() >= 0);
 
-																		 
+	lastTime_logstatus  = millis();																	 
 																		
 }
 
@@ -128,26 +130,31 @@ void loop() {
 
 
   
-  if ( IMX5.available()) {     // If anything comes in Serial1 (pins 0 & 1)
-    Serial.write( IMX5.read());
-//    Serial.print( IMX5.readString());   // read it and send it out Serial (USB)
-//    Serial.write( IMX5.read());   // read it and send it out Serial (USB)
-//    Serial.println("Got data from IMX5. ");
-  }
-//  if ( IMX5.available() >= sdWriteSize) {   
-//      
-//      IMX5.readBytes(myBuffer, sdWriteSize);
-//      Serial.println(",");
-//      Serial.write( myBuffer, sdWriteSize);   
-//      Serial.println(".");
-//    }
+  // if ( IMX5.available()) {     // If anything comes in Serial1 (pins 0 & 1)
+    // Serial.write( IMX5.read());
+// //    Serial.print( IMX5.readString());   // read it and send it out Serial (USB)
+// //    Serial.write( IMX5.read());   // read it and send it out Serial (USB)
+// //    Serial.println("Got data from IMX5. ");
+  // }
+ if ( IMX5.available() >= WriteSize) {   
+     bitesToWrite=IMX5.available();
+	 Serial.println(",");
+	 if (bitesToWrite>WriteSize*2) {
+        bitesToWrite=WriteSize*2;
+        Serial.println("More bits than writesize");
+     }
+     IMX5.readBytes(myBuffer, WriteSize);
+     Serial.write( myBuffer, WriteSize);   
+     Serial.println(".");
+   }
     
 										   
-											 
-										  
-		
+	if (lastTime_logstatus + 10000 < millis()){
+       Serial.print("Data in buffer:");
+       Serial.print(IMX5.available());
+       lastTime_logstatus  = millis();
+       
+  }										
 
-	 
-
-  delay(5);
+  delay(100);
 }

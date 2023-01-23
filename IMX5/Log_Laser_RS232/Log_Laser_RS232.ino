@@ -309,8 +309,8 @@ void setup(){
     logTime_laser  = millis(); // logTime_laser  
     start  = millis(); // logTime_laser 
 	
-	  RS232.write(asciiMessage); //send instruction for sending ASCII messages
-    Serial.println("Send instruction for sending ASCII messages to IMX5");
+//	  RS232.write(asciiMessage); //send instruction for sending ASCII messages
+//    Serial.println("Send instruction for sending ASCII messages to IMX5");
 	
 }
 
