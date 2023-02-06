@@ -225,15 +225,71 @@ void setupINS(){
     strcat(txString,"INS setting updated");
 }
 
-void readDateTime(){
-//  Year = myGNSS.getYear();
-//  Month = myGNSS.getMonth();
-//  Day = myGNSS.getDay();
-//  Hour = myGNSS.getHour();
-//  Minute = myGNSS.getMinute();
-//  Second = myGNSS.getSecond();
+void getDateTime( ){
+	char msgOut[256];
+  char msgUnformatted[] ="$ASCB,0,,,,,,,,,,,100,";
+	FormatAsciiMessage( msgUnformatted,sizeof(msgUnformatted),msgOut);
+	int out=0;
+	String msg="NotValidMessage";
+	IMX5.write('$STPB*15\r\n'); 
+	Serial.println(asciiMessageformatted);
+    IMX5.write(asciiMessageformatted); 
+	lastTime=millis();
+	while(!out){
+		if (IMX5.available()){ // Check Serial inputs
+			String msg = Serial.readString();
+		}
+		out=parseDateTime(msg);
+		
+		if( millis()-lastTime > 2000){
+			Serial.print(F("No GPS. Setting date to default and random time!"));
+			out=parseDateTime("$GPZDA,001924,06,01,1980,00,00*41");
+      break;
+		}
+	}
+	IMX5.write('$STPB*15\r\n'); 
+	Serial.print(F("Current date:"));
+	strcpy(txString,printDateTime().c_str());
+  Serial.println(txString);
 }
 
+int parseDateTime( String GPDZA){
+	//$GPZDA,001924,06,01,1980,00,00*41\r\n
+	if (GPDZA.indexOf("$GPZDA") != -1 ) { 
+		Serial.print("Valid msg:");
+    Serial.print(GPDZA);
+		int index [5];
+		index[0]= GPDZA.indexOf(",");
+    Serial.print(index[0]);
+		for(int i=1; i<5;i++){
+			index[i]= GPDZA.indexOf(",",index[i-1]);
+      Serial.print(index[i]);
+		}
+    Year = GPDZA.substring(index[1],index[2]).toInt();
+    Month = GPDZA.substring(index[2],index[3]).toInt();
+    Day = GPDZA.substring(index[3],index[4]).toInt();
+    Hour = GPDZA.substring(index[0],index[0]+3).toInt();
+    Minute = GPDZA.substring(index[0]+2,index[0]+5).toInt();
+    Second = GPDZA.substring(index[0]+4,index[0]+7).toInt();
+		Serial.print("Date parsed");
+		return 1;
+	}else{
+		Year = 2000 ;
+    Month = 01;
+    Day = 01;
+    Hour = random(23) ;
+    Minute = random(60);
+    Second = random(60);
+		return 0;
+	}
+}
+
+
+String  printDateTime() {  
+		sprintf(subString,"%s-%s-%s %s:%s:%s",Year,Month, Day, Hour, Minute, Second );
+		Serial.println(subString);
+		return subString;
+}
       
 // /////////////////////////////////////////////
 // ---------------------------------------------
@@ -357,19 +413,7 @@ void deleteFile(fs::FS &fs, const char * path){
 }
 
 
-void  printDateTime() {  
-  Serial.print(Year);
-  Serial.print("-");
-  Serial.print(Month);
-  Serial.print("-");
-  Serial.print(Day);
-  Serial.print("  ");
-  Serial.print(Hour);
-  Serial.print(":");
-  Serial.print(Minute);
-  Serial.print(":");
-  Serial.print(Second);
-}
+
 
 void  Write_header() {  
   dataFile.println(F("# INS and Laser altimeter log file"));
@@ -457,40 +501,10 @@ void  log_Laser_settings() {
 void  makeFiles(fs::FS &fs) {  
   Serial.println(F("Making new files"));
 
-  // // Check for GPS to have good time and date
-  // int count = 0;
-  // while (1) {  // Check for GPS to have good time and date
-    // ++count;
-    // if ((myGNSS.getTimeValid() == true) && (myGNSS.getDateValid() == true)) {
-        // Serial.print(F("Date and time are valid. It is: "));
-        // readDateTime();
-        // printDateTime();
-        // Serial.println();
-        // break;
-    // }else if (count > 3) {
-        // Year = 2000 ;
-        // Month = 01;
-        // Day = 01;
-        // Hour = random(23) ;
-        // Minute = random(60);
-        // Second = random(60);
-        // break;
-        // Serial.println(F("GPS is not good. Making random filename with date:"));
-        // printDateTime();
-        // Serial.println(); 
-    // }
-    
-    // Serial.println(F("Date or time are not valid. Waiting for better GPS connection."));
-    // readDateTime();
-    // Serial.print(F("Date and time: "));
-    // printDateTime();
-    // Serial.println();
-    // LED_blink(1000, 3);
-  // }
-  
-  
-  // sprintf(dataFileName, "/INS_Laser%02d%02d%02d_%02d%02d.dat", Year%1000 ,Month ,Day ,Hour,Minute);   // create name of data file
-   sprintf(dataFileName, "/testfile.csv");   // create name of data file
+  // Check for GPS to have good time and date
+  getDateTime( );
+  sprintf(dataFileName, "/INS%02d%02d%02d_%02d%02d.dat", Year%1000 ,Month ,Day ,Hour,Minute);   // create name of data file
+   //sprintf(dataFileName, "/testfile.csv");   // create name of data file
   Serial.println(dataFileName);
   dataFile=fs.open(dataFileName, FILE_WRITE);
   if(!dataFile){
@@ -513,19 +527,11 @@ void  makeFiles(fs::FS &fs) {
 
 
 void  Write_stop() {  
-  dataFile.print(F("Measurements stopped on: "));
-  // dataFile.print(Year);
-  // dataFile.print("-");
-  // dataFile.print(Month);
-  // dataFile.print("-");
-  // dataFile.print(Day);
-  // dataFile.print(", ");
-  // dataFile.print(Hour);
-  // dataFile.print(":");
-  // dataFile.print(Minute);
-  // dataFile.print(":");
-  // dataFile.println(Second);
-  // dataFile.println(F("# --------------------------------------"));
+  dataFile.println(F("#--------------------------------------"));
+  dataFile.print(F("# Measurements stopped on: "));
+  getDateTime( );
+  dataFile.print(printDateTime());
+  dataFile.println(F("#--------------------------------------"));
 }
 
 void writeToBuffer(){
@@ -968,8 +974,9 @@ void loop(){
 	  
 	    Serial.print("Dump IMX5 data to buffer:");
   	  Serial.println(bitesToWrite);
-  	  IMX5.readBytes(tempBuffer, bitesToWrite);
-      writeToBuffer();
+  	  // IMX5.readBytes(tempBuffer, bitesToWrite);
+      for(int i=0;i<bitesToWrite;i++) tempBuffer[i]=IMX5.read();
+	  writeToBuffer();
       Serial.write(tempBuffer, bitesToWrite);
       logTime_IMX5=millis();
     }
@@ -985,9 +992,9 @@ void loop(){
   		  bitesToWrite=tempBufferSize;  
   	  }
 	  
-	    Serial.print("Dump Laser data to buffer:");
+	  Serial.print("Dump Laser data to buffer:");
   	  Serial.println(bitesToWrite);
-	    RS232.readBytes(tempBuffer, bitesToWrite);
+	  RS232.readBytes(tempBuffer, bitesToWrite);
       writeToBuffer();
       Serial.write(tempBuffer, bitesToWrite);
       logTime_laser=millis();
@@ -1022,7 +1029,7 @@ void loop(){
   		dataFile.write( tempBuffer, sdWriteSize);
   		Serial.print("Data written:");
   		Serial.println(sdWriteSize);
-		
+		Serial.write( tempBuffer, sdWriteSize);
 	}
 
      // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-

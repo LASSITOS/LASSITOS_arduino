@@ -26,7 +26,7 @@
 
 //HardwareSerial
 #include <HardwareSerial.h>
-HardwareSerial RS232(2);
+HardwareSerial RS232(1);
 
 int PIN_Rx = 16; //  Hardware RX pin,
 int PIN_Tx = 17; // Hardware TX pin,
@@ -72,5 +72,5 @@ void loop() {
 
 //  }
 
-  delay(5);
+  delay(1);
 }
