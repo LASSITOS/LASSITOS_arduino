@@ -226,11 +226,11 @@ void setupINS() {
 
 void getDateTime() {
   char msgOut[256];
-  char msgUnformatted[] = "$ASCB,0,,,,,,,,,,,100,";
-  FormatAsciiMessage(msgUnformatted, sizeof(msgUnformatted), msgOut);
+  char msgStart[] = "$ASCB,0,,,0,,,,,,,,100,";
+  FormatAsciiMessage(msgStart, sizeof(msgStart), msgOut);
   int out = 0;
   String msg = "NotValidMessage";
-  IMX5.write('$STPB*15\r\n');
+  IMX5.write('$STPC*14\r\n');
   Serial.println(msgOut);
   IMX5.write(msgOut);
   lastTime = millis();
@@ -247,9 +247,9 @@ void getDateTime() {
       out = 1;
     }
   }
-  IMX5.write('$STPB*15\r\n');
-  msgUnformatted= "$ASCB,0,,,,,,,,,,,,";
-  FormatAsciiMessage(msgUnformatted, sizeof(msgUnformatted), msgOut);
+  IMX5.write('$STPC*14\r\n');
+  char msgStop[] = "$ASCB,0,,,,,,,,,,,0,";
+  FormatAsciiMessage(msgStop, sizeof(msgStop), msgOut);
   Serial.println(msgOut);
   IMX5.write(msgOut);
 
