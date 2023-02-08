@@ -46,7 +46,6 @@ long lastTime_flushSD = 0;
 long logTime_laser;
 long logTime_IMX5;
 
-
 int statLED = 13;
 
 // settings SD
@@ -107,7 +106,7 @@ int IMX5_Tx = 25;  //  Hardware TX pin, to PIN8 on IMX5
 #define IMX5_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
 #define IMX5_log_intervall 2000
 
-char asciiMessage[] = "$ASCB,512,,,500,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+char asciiMessage[] ="ASCB,0,,,100,,,,,,,,0,"; // "$ASCB,512,,,100,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 char asciiMessageformatted[128];
 
 
@@ -226,7 +225,7 @@ void setupINS() {
 
 void getDateTime() {
   char msgOut[256];
-  char msgStart[] = "$ASCB,0,,,0,,,,,,,,100,";
+  char msgStart[] = "$ASCB,0,,,,,,,,,,,200,";
   FormatAsciiMessage(msgStart, sizeof(msgStart), msgOut);
   int out = 0;
   String msg = "NotValidMessage";
@@ -236,16 +235,23 @@ void getDateTime() {
   lastTime = millis();
   while (!out) {
     if (IMX5.available()) {  // Check Serial inputs
-      String msg = Serial.readString();
+      // String msg = Serial.readString();
+      bitesToWrite = IMX5.available();
+      if (tempBufferSize < bitesToWrite) {
+        bitesToWrite = tempBufferSize;
+      }
+      IMX5.readBytes(tempBuffer, bitesToWrite);
+      String msg = (char*)tempBuffer;
       // Serial.println(msg);
       out = parseDateTime(msg);
     }
-    if (millis() - lastTime > 2000) {
+    if (millis() - lastTime > 5000) {
       Serial.print(F("No GPS. Setting date to default and random time!"));
       // out = parseDateTime("$GPZDA,001924,06,01,1980,00,00*41");
       out = parseDateTime("NotAValidMessage");
       out = 1;
     }
+    delay(50);
   }
   IMX5.write('$STPC*14\r\n');
   char msgStop[] = "$ASCB,0,,,,,,,,,,,0,";
@@ -260,12 +266,15 @@ void getDateTime() {
 
 int parseDateTime(String GPDZA) {
   //$GPZDA,001924,06,01,1980,00,00*41\r\n
-  if (GPDZA.indexOf("$GPZDA") != -1) {
+  //$GPZDA,032521,08,02,2023,00,00*46   
+  int a=GPDZA.indexOf("$GPZDA");
+  int b=GPDZA.indexOf("*");
+  if (a != -1 and b!= -1 and a<b ) {
     Serial.print("Valid msg:");
-    Serial.println(GPDZA);
+    Serial.println(GPDZA.substring(a, b+3));
     int index[6];
-    index[0] = GPDZA.indexOf(',') + 1;
-    Serial.print(index[0]);
+    index[0] = a + 7;
+    // Serial.print(index[0]);
     for (int i = 0; i < 5; i++) {
       index[i + 1] = GPDZA.indexOf(',', index[i]) + 1;
       // Serial.print(i+1);
@@ -366,7 +375,7 @@ void removeDir(fs::FS &fs, const char *path) {
 
 void readFile(fs::FS &fs, const char *path) {
   Serial.printf("## Reading file: %s\n", path);
-
+  int nmax=300;
   File file = fs.open(path);
   if (!file) {
     Serial.println("Failed to open file for reading");
@@ -376,6 +385,11 @@ void readFile(fs::FS &fs, const char *path) {
   //    Serial.println("Read from file: ");
   while (file.available()) {
     Serial.write(file.read());
+	nmax--;
+	if (nmax==0){
+		Serial.println("####### maximum number of lines has been written!");
+		break;
+	}
   }
   file.close();
 }
@@ -661,7 +675,25 @@ void stop_logging(fs::FS &fs) {
 // Input parsing functions
 // ---------------------------------------------
 // /////////////////////////////////////////////
-
+void parse( String rxValue){
+  //Start new data files if START is received and stop current data files if STOP is received
+  if (rxValue.indexOf("START") != -1) {
+	restart_logging();
+  } else if (rxValue.indexOf("STOP") != -1) {
+	logging = false;
+	stop_logging(SD);
+  } else if (rxValue.indexOf("READ") != -1) {
+	readFiles(rxValue);
+  } else if (rxValue.indexOf("LIST") != -1) {
+	getFileList();
+  } else if (rxValue.indexOf("COMS") != -1 or rxValue.indexOf("?") != -1) {
+	commands();
+  } else {
+	BLE_message = true;
+	strcpy(txString, "Input can not be parsed retry!");
+	Serial.println(txString);
+  }
+}
 
 
 
@@ -728,9 +760,6 @@ void readFiles(String rxValue) {
       Serial.println(" \n## End of file");
 
     } else if (index = -1) {
-      Serial.print("Reading file:");
-      Serial.println(dataFileName);
-      readFile(SD, dataFileName);
       Serial.print("Reading file:");
       Serial.println(dataFileName);
       readFile(SD, dataFileName);
@@ -1018,7 +1047,7 @@ void loop() {
       Serial.print("I");
       Serial.print(bitesToWrite);
       logTime_IMX5 = millis();
-      delay(5);
+      delay(1);
     }
 
 
@@ -1038,7 +1067,7 @@ void loop() {
       Serial.print(bitesToWrite);
       // Serial.write(tempBuffer, bitesToWrite);
       logTime_laser = millis();
-      delay(5);
+      delay(1);
     }
 
 
@@ -1117,7 +1146,7 @@ void loop() {
     }
 
   } else {
-    delay(50);
+    delay(10);
   }
 
 
@@ -1162,25 +1191,8 @@ void loop() {
       Serial.print("Received Value: ");
       for (int i = 0; i < rxValue.length(); i++)
         Serial.print(rxValue[i]);
-      Serial.println();
-
-      //Start new data files if START is received and stop current data files if STOP is received
-      if (rxValue.indexOf("START") != -1) {
-        restart_logging();
-      } else if (rxValue.indexOf("STOP") != -1) {
-        logging = false;
-        stop_logging(SD);
-      } else if (rxValue.indexOf("READ") != -1) {
-        readFiles(rxValue);
-      } else if (rxValue.indexOf("LIST") != -1) {
-        getFileList();
-      } else if (rxValue.indexOf("COMS") != -1 or rxValue.indexOf("?") != -1) {
-        commands();
-      } else {
-        BLE_message = true;
-        strcpy(txString, "Input can not be parsed retry!");
-        Serial.println(txString);
-      }
+        Serial.println();
+		parse(rxValue);
       Serial.println("*********");
     }
   }
