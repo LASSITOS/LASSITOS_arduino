@@ -63,6 +63,7 @@ int statLED = 13;
 #define WriteSize_IMX5 126  // Write data to buffer in blocks (should be shorter than expected message)
 #define myBufferSize 8192
 #define tempBufferSize 1024      // must be bigger than sdWriteSize,WriteSize_Laser and WriteSize_IMX5
+#define LaserBufferSize 2048 
 #define flushSD_intervall 60000  // Flush SD every ** milliseconds to avoid losing data if ESP32 crashes
 
 //uint8_t *myBuffer; // A buffer to hold the GNSS data while we write it to SD card
@@ -70,7 +71,7 @@ int statLED = 13;
 //uint8_t *tempBuffer;
 uint8_t myBuffer[myBufferSize];       // Create our own buffer to hold the data while we write it to SD card
 uint8_t tempBuffer[tempBufferSize];   // Create temporay buffer
-uint8_t myBuffer_laser[sdWriteSize];  // Create buffer for laser data
+uint8_t myBuffer_laser[LaserBufferSize];  // Create buffer for laser data
 
 int BufferTail = 0;
 int BufferHead = 0;
@@ -106,9 +107,10 @@ int IMX5_Tx = 25;  //  Hardware TX pin, to PIN8 on IMX5
 #define IMX5_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
 #define IMX5_log_intervall 2000
 
-char asciiMessage[] ="ASCB,0,,,100,,,,,,,,0,"; // "$ASCB,512,,,100,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
-char asciiMessageformatted[128];
+char asciiMessage[] = "$ASCB,512,,,100,,,,,,,,,";  // // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 
+char asciiMessageformatted[128];
+int IMX5freq=100;
 
 long Year;
 long Month;
@@ -318,6 +320,12 @@ String printDateTime() {
   return subString;
 }
 
+
+void setIMX5message(){
+	sprintf(asciiMessage, "$ASCB,512,,,%d,,,,,,,,,",IMX5freq);
+}
+
+
 // /////////////////////////////////////////////
 // ---------------------------------------------
 // SD card funtions und code
@@ -375,7 +383,7 @@ void removeDir(fs::FS &fs, const char *path) {
 
 void readFile(fs::FS &fs, const char *path) {
   Serial.printf("## Reading file: %s\n", path);
-  int nmax=300;
+  int nmax=50000;
   File file = fs.open(path);
   if (!file) {
     Serial.println("Failed to open file for reading");
@@ -387,7 +395,7 @@ void readFile(fs::FS &fs, const char *path) {
     Serial.write(file.read());
 	nmax--;
 	if (nmax==0){
-		Serial.println("####### maximum number of lines has been written!");
+		Serial.println("####### maximum number of characters has been written!");
 		break;
 	}
   }
@@ -593,12 +601,15 @@ void startLogging() {
   //start Laser measuremens
   RS232.write("DT");
   RS232.write(0x0D);
-  delay(50);
+  delay(200);
 
   while (RS232.read() >= 0)
     ;  // flush the receive buffer.
-  while (IMX5.read() >= 0)
+  // while (IMX5.read() >= 0)
     ;  // flush the receive buffer.
+  while (IMX5.available() > 0){
+    char k = IMX5.read();
+  }
   strcpy(txString, "Starting logging data!");
   Serial.println(txString);
 }
@@ -677,6 +688,7 @@ void stop_logging(fs::FS &fs) {
 // /////////////////////////////////////////////
 void parse( String rxValue){
   //Start new data files if START is received and stop current data files if STOP is received
+  BLE_message = true;
   if (rxValue.indexOf("START") != -1) {
 	restart_logging();
   } else if (rxValue.indexOf("STOP") != -1) {
@@ -688,6 +700,30 @@ void parse( String rxValue){
 	getFileList();
   } else if (rxValue.indexOf("COMS") != -1 or rxValue.indexOf("?") != -1) {
 	commands();
+  } else if (rxValue.indexOf("CHECKLASER") != -1) {
+	check_laser();
+  } else if (rxValue.indexOf("CHECKINS") != -1) {
+	check_INS();
+  } else if (rxValue.indexOf("INSFREQ") != -1) {
+	  Serial.println("Setting new frequency value! ");
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+		if (!logging) {
+		  IMX5freq=rxValue.substring(index+1,index2).toInt();
+		  sprintf(txString,"New frequency is: %d ms",IMX5freq );
+		  Serial.println(txString);
+		  setIMX5message(); //update ASCII setting message
+		  setupINS(); //send setting message to IMX5
+		  } else {
+			Serial.println("Datalogging running. Can't read file list now. First stop measurment!");
+		}
+    } else {
+      sprintf(txString,"INS requency (ms) can not be parsed from string '%s''",rxValue);
+      Serial.println(txString);
+    }
+  
+  
   } else {
 	BLE_message = true;
 	strcpy(txString, "Input can not be parsed retry!");
@@ -802,27 +838,69 @@ void check_laser() {
   if (!logging) {
     strcat(txString, "\nLaser data \n# --------------------------------------\n");
     Send_tx_String(txString);
+	strcpy(txString, "");
     lastTime = millis();
     while (RS232.read() >= 0)
       ;  // flush the receive buffer.
     while (millis() - lastTime < 1000)
       ;
     int availableBytes = RS232.available();
-    RS232.readBytes(myBuffer_laser, availableBytes);
+    if (LaserBufferSize < availableBytes) {
+        availableBytes = LaserBufferSize;
+		    strcat(txString, "# Buffer full. Data were cut.\n");
+    }
+	
+	
+	RS232.readBytes(myBuffer_laser, availableBytes);
     Serial.write(myBuffer_laser, availableBytes);
     if (deviceConnected) {
       pTxCharacteristic->setValue(myBuffer_laser, availableBytes);
       pTxCharacteristic->notify();
       BLE_message = false;
     }
-    strcpy(txString, "");
-    strcat(txString, "# --------------------------------------\n");
-    Send_tx_String(txString);
+  strcat(txString, "# --------------------------------------\n");
+  Send_tx_String(txString);
   } else {
-    strcpy(txString, "Datalogging running. Can't run IMU _check now!");
+    strcpy(txString, "Datalogging running. Can't run LASER_check now!");
   }
   Send_tx_String(txString);
 }
+
+// Get Laser data for 1 second and send it over BLE and serial
+void check_INS() {
+  Send_tx_String(txString);
+  strcpy(txString, "");
+  if (!logging) {
+    strcat(txString, "\nIMX5 data \n# --------------------------------------\n");
+    Send_tx_String(txString);
+	strcpy(txString, "");
+    while (IMX5.read() >= 0)
+      ;  // flush the receive buffer.
+    
+    delay(1000);
+    int availableBytes = IMX5.available();
+	
+	if (LaserBufferSize < availableBytes) {
+        availableBytes = LaserBufferSize;
+		strcat(txString, "# Buffer full. Data were cut.\n");
+    }
+	
+    IMX5.readBytes(myBuffer_laser, availableBytes);
+    Serial.write(myBuffer_laser, availableBytes);
+    if (deviceConnected) {
+      pTxCharacteristic->setValue(myBuffer_laser, availableBytes);
+      pTxCharacteristic->notify();
+      BLE_message = false;
+    }
+    
+    strcat(txString, "# --------------------------------------\n");
+    Send_tx_String(txString);
+  } else {
+    strcpy(txString, "Datalogging running. Can't run INS_check now!");
+  }
+  Send_tx_String(txString);
+}
+
 
 // Print commands
 void commands() {
@@ -870,27 +948,17 @@ class MyCallbacks : public BLECharacteristicCallbacks {
     std::string rxValue = pCharacteristic->getValue();
 
     if (rxValue.length() > 0) {
-      Serial.println("*********");
-      Serial.print("Received Value: ");
-      for (int i = 0; i < rxValue.length(); i++)
-        Serial.print(rxValue[i]);
-      Serial.println();
+		String rxValue2=rxValue.c_str();
+		// for (int i = 0; i < rxValue.length(); i++)
+		// rxValue2 += rxValue[i];
 
-      //Start new data files if START is received and stop current data files if STOP is received. RATE and NAVMODE ar other options
-      if (rxValue.find("START") != -1) {
-        BLE_start = true;
-      } else if (rxValue.find("STOP") != -1) {
-        BLE_stop = true;
-      } else if (rxValue.find("CHECKLASER") != -1) {
-        check_laser();
-      } else if (rxValue.find("COMS") != -1 or rxValue.find("?") != -1) {
-        commands();
-      } else {
-        BLE_message = true;
-        strcpy(txString, "Input can not be parsed retry!");
-        Serial.println(txString);
-      }
-      Serial.println("*********");
+		Serial.println("*********");
+		Serial.println("Received Value: ");
+		Serial.println("*********");
+		BLE_message=true;
+		sprintf(subString,"BLE input: %s\n",rxValue2);
+		strcat(txString,subString);
+		parse(rxValue2);
     }
   }
 };
