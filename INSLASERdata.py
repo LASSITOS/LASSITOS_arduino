@@ -43,27 +43,25 @@ class MSG_type:
             setattr(self,k,np.array([l[i] for l in values]))
 
 
-    
-
 
 class INSLASERdata:
     
     MSG_list=['Laser','PINS1','PSTRB']    # NMEA message list to parse
-    keyList=[['h','signQ','T','iTOW'],        
-             ['iTOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lon', 'lat', 'height','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
-             ['GPSWeek','iToW','pin','count']]
+    keyList=[['h','signQ','T','TOW'],        
+             ['TOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lat', 'lon', 'height','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
+             ['GPSWeek','TOW','pin','count']]  # order matters!!
         
     # extr_list=['PINS1','Laser']
     
-    def __init__(self,filepath,name='',Laserrate=10,load=True, 
-                 correct_Laser=True,distCenter=0, pitch0=0, roll0=0,laser_time_offset=0,c_pitch=0,c_roll=0):
+    def __init__(self,filepath,name='',load=True, droplaserTow0=True,
+                 correct_Laser=True,distCenter=0, pitch0=0, roll0=0,laser_time_offset=0,c_pitch=1,c_roll=1):
         """
             Read GNSS and Laser data from .ubx data file. Additional methods are available for plotting and handling data.    
         
             Inputs:
             ---------------------------------------------------    
             path:           file path
-            Laserrate:      data reate of Laser in Hz. If  Laserrate=0, do not load Laser data.
+           
            
         """
         if name!='': 
@@ -71,9 +69,16 @@ class INSLASERdata:
         else:
              self.name=filepath.split('\\')[-1]   
         
-        self.Laserrate=Laserrate
         self.filepath=filepath
         self.ToW=0
+        self.distCenter=distCenter
+        self.pitch0=pitch0
+        self.roll0=roll0
+        self.c_pitch=c_pitch
+        self.c_roll=c_roll
+        
+        
+        
         
         if load:
             self.loadData(correct_Laser=correct_Laser)
@@ -135,7 +140,13 @@ class INSLASERdata:
                 
             else:
                 self.other.append(l)
-                
+        
+        # drop  laser points with To=0        
+        if droplaserTow0:
+            for i,l in enumerate(self.LaserList):
+                if l[-1]!=0:
+                    break
+            self.LaserList=self.LaserList[i:]
         
         for msg in (self.MSG_list):
             setattr(self,msg,MSG_type(msg) )
@@ -147,7 +158,8 @@ class INSLASERdata:
             # delattr(self,msg+'List')
             
         print("Total lines read: ", i)   
-            
+        
+
         # correct h with angles from INS
         if correct_Laser:
                 self.corr_h_laser()
@@ -158,20 +170,20 @@ class INSLASERdata:
         correct height with angles from INS
         """   
         try:
-            i=self.PVAT.iTOW.searchsorted( self.Laser.iTOW)
+            i=self.PINS1.TOW.searchsorted( self.Laser.TOW)
             j=np.array(i)-1
             
-            pitch=self.PVAT.vehPitch[j]+(self.PVAT.vehPitch[i]-self.PVAT.vehPitch[j])/(self.PVAT.iTOW[i]-self.PVAT.iTOW[j])*(self.Laser.iTOW-self.PVAT.iTOW[j])
-            roll=self.PVAT.vehRoll[j]+(self.PVAT.vehRoll[i]-self.PVAT.vehRoll[j])/(self.PVAT.iTOW[i]-self.PVAT.iTOW[j])*(self.Laser.iTOW-self.PVAT.iTOW[j])
+            pitch=self.PINS1.pitch[j]+(self.PINS1.pitch[i]-self.PINS1.pitch[j])/(self.PINS1.TOW[i]-self.PINS1.TOW[j])*(self.Laser.TOW-self.PINS1.TOW[j])
+            roll=self.PINS1.roll[j]+(self.PINS1.roll[i]-self.PINS1.roll[j])/(self.PINS1.TOW[i]-self.PINS1.TOW[j])*(self.Laser.TOW-self.PINS1.TOW[j])
             
-            roll-=self.Laser.roll0
-            pitch-=self.Laser.pitch0
-            roll*=self.Laser.c_roll
-            pitch*=self.Laser.c_pitch
+            roll-=self.roll0
+            pitch-=self.pitch0
+            # roll*=self.c_roll
+            # pitch*=self.c_pitch
             
             self.Laser.pitch=pitch
             self.Laser.roll=roll
-            self.Laser.h_corr=self.Laser.h*(np.cos(pitch/180*np.pi)*np.cos(roll/180*np.pi))-self.Laser.distCenter*np.sin(pitch/180*np.pi)
+            self.Laser.h_corr=self.Laser.h*(np.cos(pitch)*np.cos(roll))-self.distCenter*np.sin(pitch)
         
         except Exception as e: 
             print(e)
@@ -184,82 +196,78 @@ class INSLASERdata:
                 
 
 
-    def plot_att(self, MSG='ATT',ax=[]):
-        plot_att(self,MSG=MSG,ax=ax)
+    def plot_att(self,ax=[]):
+        plot_att(self,ax=ax)
         
-    def plot_elevation_time(self, MSG='PVAT',ax=[],title=[]):
-        plot_elevation_time(self,MSG=MSG,ax=ax,title=title)
+    def plot_elevation_time(self,ax=[],title=[]):
+        plot_elevation_time(self,ax=ax,title=title)
 
-    def plot_longlat(self,MSG='PVAT',z='height',ax=[],cmap= cm.batlow):
-        plot_longlat(self,MSG=MSG,z=z,ax=ax,cmap=cmap)
+    def plot_longlat(self,z='height',ax=[],cmap= cm.batlow):
+        plot_longlat(self,z=z,ax=ax,cmap=cmap)
         
-    def plot_map(self,MSG='PVAT',z='height',ax=[],cmap= cm.batlow):
-        plot_map(self,MSG=MSG,z=z,ax=ax,cmap=cmap)
+    def plot_map(self,z='height',ax=[],cmap= cm.batlow):
+        plot_map(self,z=z,ax=ax,cmap=cmap)
 
-    def plot_mapOSM(self,MSG='PVAT',z='iTOW',ax=[],cmap= cm.batlow,title=[],extent=[]):
-        plot_mapOSM(self,MSG=MSG,z=z,ax=ax,cmap= cmap,title=title,extent=extent)
+    def plot_mapOSM(self,z='TOW',ax=[],cmap= cm.batlow,title=[],extent=[]):
+        plot_mapOSM(self,z=z,ax=ax,cmap= cmap,title=title,extent=extent)
 
 
 
-    # def subset(self, timelim=[],timeformat='ms'):
-    #     """
-    #     Parameters
-    #     ----------
-    #     timelim : List, optional
-    #         limits in time. The default is [].
-    #     timeformat : string, optional
-    #         units of time limits. The default is 'ms'.
+    def subset(self, timelim=[],timeformat='s'):
+        """
+        Parameters
+        ----------
+        timelim : List, optional
+            limits in time. The default is [].
+        timeformat : string, optional
+            units of time limits. Either 'TOW' or 's' (relative to start of data).
 
-    #     Returns
-    #     -------
-    #     data2 : UBX2data object with subset of data into time limits
+        Returns
+        -------
+        data2 : UBX2data object with subset of data into time limits
             
 
-    #     """
-    #     for MSG in ['PVAT','PVT']: 
-    #         if  getattr(self,  MSG).len>0:
-    #              d=getattr(self, MSG)
-    #              if timeformat=='ms':
-    #                     lim=d.iTOW.searchsorted(timelim)
-    #                     iTOW_lim=timelim
-    #              if timeformat=='s':
-    #                     lim=((d.iTOW -d.iTOW[0])/1000).searchsorted(timelim)
-    #                     iTOW_lim=d.iTOW[lim]
-    #              break
-        
-    #     data2=UBX2data(self.file_original,name=self.name,Laserrate=self.Laserrate,load=False)
+        """
+        d=self.PINS1
+        if timeformat=='TOW':
+              lim=d.TOW.searchsorted(timelim)
+              TOW_lim=timelim
+        elif timeformat=='s':
+              lim=((d.TOW -d.TOW[0]) ).searchsorted(timelim)
+              TOW_lim=d.TOW[lim]
+        else:
+            print('timeformat not valid')
+            return 0
+  
+        data2=INSLASERdata(self.filepath,name=self.name,load=False)
 
-    #     for attr in (self.MSG_list+['Laser']):
-    #         # print(attr)
-    #         try:   
-    #             msg_data=getattr(self,attr)
-    #             lim2=msg_data.iTOW.searchsorted(iTOW_lim)
-    #         except   AttributeError:
-    #             try:
-    #                 msg_data=getattr(self,attr)
-    #                 msg_data.extract()
-    #                 lim2=msg_data.iTOW[iTOW_lim]
-    #             except Exception as e: 
-    #                 print(e)
-    #                 continue
-    #         d2=MSG_type()
+        for attr in (self.MSG_list):
+            # print(attr)
+            try:   
+                msg_data=getattr(self,attr)
+                lim2=msg_data.TOW.searchsorted(TOW_lim)
+            except Exception as e: 
+                    print(e)
+                    print(attr)
+                    # continue
+            d2=MSG_type(attr)
             
-    #         for a in msg_data.__dict__.keys():
-    #             # print('\t',a)
-    #             try:
-    #                 setattr(d2,a,np.array(getattr(msg_data, a)[lim2[0]:lim2[1]] ))
-    #             except TypeError:
-    #                 setattr(d2,a,getattr(msg_data, a))
-    #         setattr(d2,'len',lim2[1]-lim2[0])
-    #         setattr(data2,attr,d2)
-    #     return data2
+            for a in msg_data.__dict__.keys():
+                # print('\t',a)
+                try:
+                    setattr(d2,a,np.array(getattr(msg_data, a)[lim2[0]:lim2[1]] ))
+                except:
+                    setattr(d2,a,getattr(msg_data, a))
+            setattr(d2,'len',lim2[1]-lim2[0])
+            setattr(data2,attr,d2)
+        return data2
         
 # %% #########function definitions #############
 
 def parseNMEA(l):
     """
     l: string with data
-    iTOW: time of Week to append to message data
+    TOW: time of Week to append to message data
     
     return height, signal quality, temperature 
     
@@ -290,7 +298,7 @@ def parseNMEA(l):
 def parseLaser(l):
     """
     l: string with data
-    iTOW: time of Week to append to message data
+    TOW: time of Week to append to message data
     
     return height, signal quality, temperature 
     
@@ -299,7 +307,7 @@ def parseLaser(l):
     h=[]
     T=[]
     signQ=[]
-    iTOW=[]
+    TOW=[]
 
     i=0
     j=0
@@ -398,26 +406,32 @@ def check_data(data):
             d=getattr(data,attr)
             print('\n',attr,'\n----------------------------')
             print('Length:')
-            print(len(d.parsed))
+            print(d.len)
             print('Time intervall (s):')
-            print((d.iTOW[:5]-d.iTOW[0])/1000)
+            print((d.TOW[:5]-d.TOW[0]) )
         except Exception as e: 
                 print(e)
             
             
     print('\nOthers: \n----------------------------')   
-    for c in data.other[:10]: 
-        print(c.identity,', bit length:',c.length) 
+    print('Length:')
+    try:
+        print(len(data.other))
+    except:
+        print('no data')
+    # for c in data.other[:10]: 
+    #     print(c) 
     
     print('\nCorrupted: \n----------------------------')   
-    for c in data.corrupt[:10]: 
-        print(c)      
+    try:
+        print(len(data.corrupt))
+    except:
+        print('no data')
+    # for c in data.corrupt[:10]: 
+    #     print(c)      
         
     try:
-        if data.PVAT.parsed != []:
-            data.plot_att(MSG='PVAT')
-        else:
-            data.plot_att()
+        data.plot_att()
     except AttributeError:
         print('no attitude messages found')
         
@@ -433,9 +447,9 @@ def check_data(data):
         ax2.set_ylabel('GNSS Delta_h (m)')
         ax.set_xlabel('time (ms)')
     
-        ax.plot(data.Laser.iTOW-data.PVAT.iTOW[0],data.Laser.h,'--xk',label='Laser')
-        # ax.plot(data.Laser.iTOW2-data.PVAT.iTOW[0],data.Laser.h,'--ob',label='Laser, time2')
-        ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0]),data.PVAT.height/1000-(data.PVAT.height[0]/1000-data.Laser.h[0]),'+:r',label='GPS height')
+        ax.plot(data.Laser.TOW-data.PINS1.TOW[0],data.Laser.h,'--xk',label='Laser')
+        # ax.plot(data.Laser.TOW2-data.PINS1.TOW[0],data.Laser.h,'--ob',label='Laser, time2')
+        ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]),data.PINS1.height -(data.PINS1.height[0] -data.Laser.h[0]),'+:r',label='GPS height')
         
         lines, labels = ax.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
@@ -462,10 +476,10 @@ def plot_att(data,ax=[],title='',heading=True):
             ax2=ax.twinx()    
     
 
-    ax.plot((d.iTOW-d.iTOW[0])/1000,np.degrees(d.pitch),'o-r',label='pitch')
-    ax.plot((d.iTOW-d.iTOW[0])/1000,np.degrees(d.roll),'x-k',label='roll')
+    ax.plot((d.TOW-d.TOW[0]),np.degrees(d.pitch),'o-r',label='pitch')
+    ax.plot((d.TOW-d.TOW[0]),np.degrees(d.roll),'x-k',label='roll')
     if heading:
-        ax2.plot((d.iTOW-d.iTOW[0])/1000,np.degrees(d.heading),'x-b',label='heading')
+        ax2.plot((d.TOW-d.TOW[0]),np.degrees(d.heading),'x-b',label='heading')
 
     
     
@@ -500,10 +514,10 @@ def plot_att_laser(data,ax=[],title='',heading=True):
             ax2=ax.twinx()        
     
 
-    ax.plot((d.iTOW-d.iTOW[0])/1000,np.degrees(d.pitch),'o-r',label='pitch')
-    ax.plot((d.iTOW-d.iTOW[0])/1000,np.degrees(d.roll),'x-k',label='roll')
+    ax.plot((d.TOW-d.TOW[0]),np.degrees(d.pitch),'o-r',label='pitch')
+    ax.plot((d.TOW-d.TOW[0]),np.degrees(d.roll),'x-k',label='roll')
     if heading:
-        ax2.plot((d.iTOW-d.iTOW[0])/1000,np.degrees(d.heading),'x-b',label='heading')
+        ax2.plot((d.TOW-d.TOW[0]),np.degrees(d.heading),'x-b',label='heading')
     
     
     ax.set_ylabel('pitch/roll (deg)')
@@ -530,7 +544,7 @@ def plot_att_laser(data,ax=[],title='',heading=True):
         ax3.yaxis.label.set_color('g')
         ax3.tick_params(axis='y', colors='g')
         ax3.set_ylabel('Laser h (m)')
-        ax3.plot((data.Laser.iTOW-d.iTOW[0])/1000,data.Laser.h,':og',label='Laser')
+        ax3.plot((data.Laser.TOW-d.TOW[0]),data.Laser.h,':og',label='Laser')
         lines3, labels3 = ax3.get_legend_handles_labels()
     except AttributeError:
         print('No laser data found')
@@ -543,17 +557,17 @@ def plot_att_laser(data,ax=[],title='',heading=True):
     elif title!='none':
         pl.title(title)
     
-def plot_elevation_time(data,MSG='PVT',ax=[],title=[]):
+def plot_elevation_time(data,ax=[],title=[]):
     if ax==[]:
         fig=pl.figure()
         ax=pl.subplot(111)
     else:
         pl.sca(ax)
     
-    d=getattr(data,MSG)
+    d=data.PINS1
 
     
-    ax.plot((d.iTOW-d.iTOW[0])/1000,d.height/1000,'o-r',label='height')
+    ax.plot((d.TOW-d.TOW[0]),d.height,'o-r',label='height')
     ax.set_ylabel('elevation (m a.s.l.)')
     ax.set_xlabel('time (s)')
    
@@ -562,24 +576,24 @@ def plot_elevation_time(data,MSG='PVT',ax=[],title=[]):
     pl.tight_layout()
     
     
-def plot_longlat(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow):
+def plot_longlat(data,z='height',ax=[],cmap= cm.batlow):
     if ax==[]:
         fig=pl.figure()
         ax=pl.subplot(111)
     else:
         pl.sca(ax)
     
-    d=getattr(data,MSG)
+    d=data.PINS1
     
     ax2=ax.twinx()    
     c=getattr(d,z)
     if z=='height':
         label='elevation (m a.s.l.)'
-        c=c/1000
-    elif z=='iTOW':
+        c=c
+    elif z=='TOW':
         label='time (s)'
         c-=c[0]
-        c=c/1000
+        c=c
     else:
         label=z
     lat=np.array([distance.distance((d.lat[0],d.lon[0]),(x,d.lon[0])).m for x in d.lat ])
@@ -604,28 +618,28 @@ def plot_summary(data,extent,cmap=cm.batlow,heading=True):
     osm_img = cimgt.OSM() # spoofed, downloaded street map
     
     ax0 = fig.add_subplot(spec[0:3, 0],projection=osm_img.crs)
-    data.plot_mapOSM(MSG='PVAT',z='iTOW',extent=extent,ax=ax0, cmap=cmap  )
+    data.plot_mapOSM(z='TOW',extent=extent,ax=ax0, cmap=cmap  )
     
     ax1 = fig.add_subplot(spec[3:5, 0])
-    ax1.plot((data.PVAT.iTOW-data.PVAT.iTOW[0])/1000,
-              [distance.distance((data.PVAT.lat[0],data.PVAT.lon[0]),(data.PVAT.lat[0],x)).m for x in data.PVAT.lon ],
+    ax1.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,
+              [distance.distance((data.PINS1.lat[0],data.PINS1.lon[0]),(data.PINS1.lat[0],x)).m for x in data.PINS1.lon ],
               'x:',label='East-West')
-    ax1.plot((data.PVAT.iTOW-data.PVAT.iTOW[0])/1000,
-              [distance.distance((data.PVAT.lat[0],data.PVAT.lon[0]),(x,data.PVAT.lon[0])).m for x in data.PVAT.lat ],
+    ax1.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,
+              [distance.distance((data.PINS1.lat[0],data.PINS1.lon[0]),(x,data.PINS1.lon[0])).m for x in data.PINS1.lat ],
               '+:',label='North-South')
     ax1.set_ylabel('Distance (m)')
     ax1.legend()
     
     ax2 = fig.add_subplot(spec[5:7, 0],sharex = ax1)
-    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h, 'x:',label='original')
-    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h_corr, '+:k',label='corrected')
-    ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0])/1000,data.PVAT.height/1000-(data.PVAT.height[0]/1000-data.Laser.h[0]),'+:r',label='GPS height')
+    ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h, 'x:',label='original')
+    ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h_corr, '+:k',label='corrected')
+    ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.height -(data.PINS1.height[0] -data.Laser.h[0]),'+:r',label='GPS height')
     ax2.set_ylabel('h_laser (m)')
     ax2.set_xlim(ax1.get_xlim())
     ax2.legend()
     
     ax3 = fig.add_subplot(spec[7:9, 0],sharex = ax1)
-    plot_att(data,MSG='PVAT',ax=ax3,title='none',heading=heading)
+    plot_att(data,ax=ax3,title='none',heading=heading)
 
     return fig
 
@@ -635,18 +649,18 @@ def laser_correction(data,show_corr_angles=0,GPS_h=False,heading=False):
     
     fig, [ax2,ax3] = pl.subplots(2, 1, figsize=(8, 8), sharex=True, sharey=False)
 
-    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h, 'x:',label='original')
-    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h_corr, '+:',label='corrected')
+    ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h, 'x:',label='original')
+    ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h_corr, '+:',label='corrected')
     if GPS_h:
-        ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0])/1000,data.PVAT.height/1000-(data.PVAT.height[0]/1000-data.Laser.h[0]),'+:r',label='GPS height')
+        ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.height -(data.PINS1.height[0] -data.Laser.h[0]),'+:r',label='GPS height')
     ax2.set_ylabel('h_laser (m)')
     ax2.legend()
 
-    plot_att(data,MSG='PVAT',ax=ax3,title='none',heading=heading)
+    plot_att(data,ax=ax3,title='none',heading=heading)
     
     if show_corr_angles:
-        ax3.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.pitch, 'x:',label='pitch laser')
-        ax3.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.roll, 'x:',label='roll laser')
+        ax3.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,np.degrees(data.Laser.pitch), 'x:',label='pitch laser')
+        ax3.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,np.degrees(data.Laser.roll), 'x:',label='roll laser')
         ax3.legend(loc=0)
     return fig
 
@@ -654,23 +668,23 @@ def laser_correction_superimposed(data,GPS_h=False):
     
     fig, ax2 = pl.subplots(1, 1, figsize=(8, 8))
 
-    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h, 'x:',label='original')
-    ax2.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.h_corr, '+:',label='corrected')
+    ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h, 'x:',label='original')
+    ax2.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.h_corr, '+:',label='corrected')
     if GPS_h:
-        ax2.plot((data.PVAT.iTOW-data.PVAT.iTOW[0])/1000,data.PVAT.height/1000-(data.PVAT.height[0]/1000-data.Laser.h[0]),'+:r',label='GPS height')
+        ax2.plot((data.PINS1.TOW-data.PINS1.TOW[0]) ,data.PINS1.height -(data.PINS1.height[0] -data.Laser.h[0]),'+:r',label='GPS height')
     ax2.set_ylabel('h_laser (m)')
     ax2.legend(loc=2)
 
     ax3=ax2.twinx()
-    ax3.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.pitch, 'x:k',label='pitch laser')
-    ax3.plot((data.Laser.iTOW-data.PVAT.iTOW[0])/1000,data.Laser.roll, '+:r',label='roll laser')
+    ax3.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.pitch, 'x:k',label='pitch laser')
+    ax3.plot((data.Laser.TOW-data.PINS1.TOW[0]) ,data.Laser.roll, '+:r',label='roll laser')
     ax3.legend(loc=1)
-    ax3.set_ylabel('Angle (deg)')
+    ax3.set_ylabel('Angle (rad)')
     ax2.grid()
     return fig
 
 # %% plot on map
-def plot_map(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow,title=[],timelim=[],timeformat='ms'):
+def plot_map(data,z='height',ax=[],cmap= cm.batlow,title=[],timelim=[],timeformat='ms'):
     
     if ax==[]:
         fig=pl.figure()
@@ -680,12 +694,12 @@ def plot_map(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow,title=[],timelim=[]
     
     
     
-    d=getattr(data,MSG)   
+    d=data.PINS1   
     if not timelim==[]:
         if timeformat=='ms':
-            lim=d.iTOW.searchsorted(timelim)
+            lim=d.TOW.searchsorted(timelim)
         if timeformat=='s':
-            lim=((d.iTOW -d.iTOW[0])/1000).searchsorted(timelim)
+            lim=((d.TOW -d.TOW[0]) ).searchsorted(timelim)
             
             
             
@@ -693,11 +707,11 @@ def plot_map(data,MSG='PVT',z='height',ax=[],cmap= cm.batlow,title=[],timelim=[]
     
     if z=='height':
         label='elevation (m a.s.l.)'
-        c=c/1000
-    elif z=='iTOW':
+        c=c 
+    elif z=='TOW':
         label='time (s)'
         c-=c[0]
-        c=c/1000
+        c=c 
     else:
         label=z
         
@@ -728,7 +742,7 @@ def image_spoof(self, tile): # this function pretends not to be a Python script
         return img, self.tileextent(tile), 'lower' # reformat for cartopy
     
     
-def plot_mapOSM(data,MSG='PVAT',z='height',ax=[],cmap= cm.batlow,title=[], extent=[]):
+def plot_mapOSM(data,z='height',ax=[],cmap= cm.batlow,title=[], extent=[]):
     """
     Plot data (z) on Open Street Map layer.
     
@@ -736,8 +750,7 @@ def plot_mapOSM(data,MSG='PVAT',z='height',ax=[],cmap= cm.batlow,title=[], exten
     ----------
     data : TYPE
         DESCRIPTION.
-    MSG : TYPE, optional
-        DESCRIPTION. The default is 'PVAT'.
+
     z : TYPE, optional
         DESCRIPTION. The default is 'height'.
     ax : TYPE, optional
@@ -762,15 +775,15 @@ def plot_mapOSM(data,MSG='PVAT',z='height',ax=[],cmap= cm.batlow,title=[], exten
   
     
     # prepare data
-    d=getattr(data,MSG)     
+    d=data.PINS1     
     c=np.array( getattr(d,z))
     if z=='height':
         label='elevation (m a.s.l.)'
-        c=c/1000
-    elif z=='iTOW':
+        c=c 
+    elif z=='TOW':
         label='time (s)'
         c-=c[0]
-        c=c/1000
+        c=c 
     else:
         label=z
     
