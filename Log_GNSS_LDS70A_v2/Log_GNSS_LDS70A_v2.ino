@@ -468,10 +468,10 @@ void  makeFiles(fs::FS &fs) {
         Hour = random(23) ;
         Minute = random(60);
         Second = random(60);
-        break;
         Serial.println(F("GPS is not good. Making random filename with date:"));
         printDateTime();
         Serial.println(); 
+		break;
     }
     
     Serial.println(F("Date or time are not valid. Waiting for better GPS connection."));

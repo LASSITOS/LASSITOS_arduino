@@ -34,12 +34,12 @@ int PIN_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
 
 int baudrateIMX5= 115200 ;
 unsigned long lastTime;
-#define WriteSize 64 // Write data to the SD card in blocks of 512 bytes
+#define WriteSize 128 // Write data to the SD card in blocks of 512 bytes
 uint8_t *myBuffer; // A buffer to hold the data while we write it to SD car
 int bitesToWrite;
 int lastTime_logstatus;
 
-char asciiMessage[] = "$ASCB,512,,,500,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+char asciiMessage[] = "$ASCB,512,,,1000,,,,,,,,,";  // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 char asciiMessageformatted[100];
 
 
