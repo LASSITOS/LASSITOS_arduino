@@ -43,7 +43,6 @@ class MSG_type:
             setattr(self,k,np.array([l[i] for l in values]))
 
 
-
 class INSLASERdata:
     
     MSG_list=['Laser','PINS1','PSTRB']    # NMEA message list to parse
@@ -81,10 +80,10 @@ class INSLASERdata:
         
         
         if load:
-            self.loadData(correct_Laser=correct_Laser)
+            self.loadData(correct_Laser=correct_Laser,droplaserTow0=droplaserTow0)
 
     
-    def loadData(self,correct_Laser=0):
+    def loadData(self,correct_Laser=0,droplaserTow0=True):
         if not os.path.isfile(self.filepath) :
             print("File not found!!!")
             raise FileNotFoundError()
@@ -111,7 +110,7 @@ class INSLASERdata:
             if l[0]=='#':
                 continue
             elif l.find('$')!=-1:
-                Msg_key,data=parseNMEA(l)
+                Msg_key,data=parseNMEAfloat(l)
                 
                 if Msg_key=='PINS1':
                     self.ToW=data[0]
@@ -126,10 +125,14 @@ class INSLASERdata:
                     continue
                     
                 try:
-                  self.MSG_list.index(Msg_key)
+                  j=self.MSG_list.index(Msg_key)
+                  if len(data)!=len(self.keyList[j]):
+                      self.corrupt.append(l)
+                      continue
                 except ValueError:
                     print("Message {:s} not in NMEA message list. Dropping it.".format(Msg_key))
                     continue
+                
                 
                 getattr(self,Msg_key+'List').append(data)
                 
@@ -143,10 +146,10 @@ class INSLASERdata:
         
         # drop  laser points with To=0        
         if droplaserTow0:
-            for i,l in enumerate(self.LaserList):
+            for j,l in enumerate(self.LaserList):
                 if l[-1]!=0:
                     break
-            self.LaserList=self.LaserList[i:]
+            self.LaserList=self.LaserList[j:]
         
         for msg in (self.MSG_list):
             setattr(self,msg,MSG_type(msg) )
@@ -295,6 +298,35 @@ def parseNMEA(l):
 
     return Msg_key,a
 
+
+def parseNMEAfloat(l):
+    """
+    l: string with data
+    TOW: time of Week to append to message data
+    
+    return height, signal quality, temperature 
+    
+    """
+    
+    Msg_key=l[l.find('$')+1:l.find(',') ]
+    start=l.find('$'+Msg_key)
+    end=l.find('*')
+
+    # Check if message is valid
+    if (start!=-1 and end!=-1 and start<end and chksum_nmea(l[start:end+3])): 
+
+      try:
+          a=np.array(l[start+len(Msg_key)+2:end].split(','),dtype=float)
+
+      except:
+              print('Coud not parse valid NMEA string:', l)  
+              return 'Error',l 
+    else:
+        print('Coud not parse string:', l)    
+        return 'Error',l             
+
+    return Msg_key,a
+
 def parseLaser(l):
     """
     l: string with data
@@ -380,9 +412,11 @@ def chksum_nmea(sentence):
        csum ^= ord(c)
     
     # Do we have a validated sentence?
-    if hex(csum) == hex(int(cksum, 16)):
-       return True
-
+    try:
+        if hex(csum) == hex(int(cksum, 16)):
+           return True
+    except  ValueError:
+        print('Invalid checksum: ',cksum)
     return False
 
 
