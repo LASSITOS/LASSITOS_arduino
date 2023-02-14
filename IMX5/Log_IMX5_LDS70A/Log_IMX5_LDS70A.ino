@@ -38,10 +38,14 @@
 #include <HardwareSerial.h>
 HardwareSerial RS232(2);
 HardwareSerial IMX5(1);
+// HardwareSerial Serial(0);
 
 #define version "IMX5+Laser v1.0"
 
 long lastTime = 0;  //Simple local timer
+long lastTime1 = 0;  //Simple local timer
+long lastTime2 = 0;  //Simple local timer
+long lastTime3 = 0;  //Simple local timer
 long lastTime_flushSD = 0;
 long logTime_laser;
 long logTime_IMX5;
@@ -58,13 +62,13 @@ int statLED = 13;
 #define CD_pin 27  // chip detect pin is shorted to GND if a card is inserted. (Otherwise pulled up by 10kOhm)
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-#define sdWriteSize 512     // Write data to the SD card in blocks of 512 bytes
+#define sdWriteSize 16384     // Write data to the SD card in blocks of 512 bytes
 #define WriteSize_Laser 23  // Write data to buffer in blocks (should be shorter than expected message)
 #define WriteSize_IMX5 126  // Write data to buffer in blocks (should be shorter than expected message)
-#define myBufferSize 8192
-#define tempBufferSize 1024      // must be bigger than sdWriteSize,WriteSize_Laser and WriteSize_IMX5
+#define myBufferSize 49152
+#define tempBufferSize 16384      // must be bigger than sdWriteSize,WriteSize_Laser and WriteSize_IMX5
 #define LaserBufferSize 2048 
-#define flushSD_intervall 60000  // Flush SD every ** milliseconds to avoid losing data if ESP32 crashes
+#define flushSD_intervall 120000  // Flush SD every ** milliseconds to avoid losing data if ESP32 crashes
 
 //uint8_t *myBuffer; // A buffer to hold the GNSS data while we write it to SD card
 //uint8_t *myBuffer_laser; // A buffer to hold the Laser data while we write it to SD card
@@ -91,10 +95,9 @@ unsigned long lastPrint;  // Record when the last Serial print took place
 int PIN_Rx = 16;  // 16 = Hardware RX pin,
 int PIN_Tx = 17;  // 17 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-#define baudrateRS232 115200
+#define baudrateRS232  230400  //115200
 #define Laser_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
 #define Laser_log_intervall 2000
-
 
 
 // settings INS IMX5
@@ -103,11 +106,11 @@ int PIN_Tx = 17;  // 17 = Hardware TX pin,
 int IMX5_Rx = 26;  //  Hardware RX pin, to PIN10 on IMX5
 int IMX5_Tx = 25;  //  Hardware TX pin, to PIN8 on IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-#define baudrateIMX5 115200
+#define baudrateIMX5 230400  //115200
 #define IMX5_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
 #define IMX5_log_intervall 2000
 
-char asciiMessage[] = "$ASCB,512,,,100,,,,,,,,,";  // // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+char asciiMessage[] = "$ASCB,512,,,100,,,,30000,,30000,,,";  // // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 
 char asciiMessageformatted[128];
 int IMX5freq=100;
@@ -231,7 +234,7 @@ void getDateTime() {
   FormatAsciiMessage(msgStart, sizeof(msgStart), msgOut);
   int out = 0;
   String msg = "NotValidMessage";
-  IMX5.write('$STPC*14\r\n');
+  IMX5.write("$STPC*14\r\n");
   Serial.println(msgOut);
   IMX5.write(msgOut);
   lastTime = millis();
@@ -255,7 +258,7 @@ void getDateTime() {
     }
     delay(50);
   }
-  IMX5.write('$STPC*14\r\n');
+  IMX5.write("$STPC*14\r\n");
   char msgStop[] = "$ASCB,0,,,,,,,,,,,0,";
   FormatAsciiMessage(msgStop, sizeof(msgStop), msgOut);
   Serial.println(msgOut);
@@ -481,23 +484,38 @@ void Write_header() {
 void log_Laser_settings() {
   dataFile.println(F("#Laser settings: "));
   dataFile.println(F("# --------------"));
-  for (int i = 0; i < 3; i++) {
-    RS232.write(0x1B);
-    delay(50);
-  }
+  // for (int i = 0; i < 3; i++) {
+  //   RS232.write(0x1B);
+  //   delay(50);
+  // }
+  Serial.println("Reading Laser setting:");
+  RS232.write(0x1B);
+  delay(250);
+  RS232.write(0x0D);
   delay(100);
   while (RS232.read() >= 0)
     ;  // flush the receive buffer.
-  RS232.write('PA');
-  RS232.write(0x0D);
-  uint8_t *Buffer_lasersetting = new uint8_t[3000];
+  uint8_t *Buffer_lasersetting = new uint8_t[4096];
   unsigned long startTime = millis();
-  while (millis() < (startTime + 1000)) {
-    bitesToWrite = RS232.available();
-    RS232.readBytes(Buffer_lasersetting, bitesToWrite);
+  bitesToWrite=0;
+  RS232.write("ID");
+  RS232.write(0x0D);
+  delay(100);
+  RS232.write("PA");
+  RS232.write(0x0D);
+  delay(100);
+  while ((millis() -startTime) < 500) {
+    while (RS232.available()){
+      Buffer_lasersetting[bitesToWrite]=RS232.read();
+      bitesToWrite++;
+    }
+    delay(5);
+  }
+  if( Buffer_lasersetting>0){
     dataFile.write(Buffer_lasersetting, bitesToWrite);
-    //    Serial.write( Buffer_lasersetting, bitesToWrite);
-    delay(110);
+    Serial.write(Buffer_lasersetting, bitesToWrite);
+  } else{
+    Serial.println("No data from Laser");
   }
   delete[] Buffer_lasersetting;
   dataFile.println(F("# --------------------------------------"));
@@ -597,7 +615,10 @@ void startLogging() {
   // setting up GPS for automatic messages
   setupINS();
   delay(50);
-
+  
+  // Write start of data to datafile
+  dataFile.println(F("###Data###"));  
+  
   //start Laser measuremens
   RS232.write("DT");
   RS232.write(0x0D);
@@ -610,6 +631,12 @@ void startLogging() {
   while (IMX5.available() > 0){
     char k = IMX5.read();
   }
+  
+  char infoMsg[] = "$INFO";
+  FormatAsciiMessage(infoMsg, sizeof(infoMsg), asciiMessageformatted);
+  IMX5.write(asciiMessageformatted);  //send instruction for sending ASCII messages
+
+
   strcpy(txString, "Starting logging data!");
   Serial.println(txString);
 }
@@ -1106,15 +1133,29 @@ void loop() {
       if (tempBufferSize < bitesToWrite) {
         bitesToWrite = tempBufferSize;
       }
+
+      IMX5.readBytes(tempBuffer, bitesToWrite);
+      writeToBuffer(tempBuffer, bitesToWrite);
+      logTime_IMX5 = millis();
+
+      if (tempBuffer[bitesToWrite-5]!='*' and IMX5.available()>0 ){
+        bitesToWrite = IMX5.available();
+        if (tempBufferSize < bitesToWrite) {
+          bitesToWrite = tempBufferSize;
+        }
+        IMX5.readBytes(tempBuffer, bitesToWrite);
+        writeToBuffer(tempBuffer, bitesToWrite);
+        // Serial.print('#');
+      }
+
       // Serial.print("Dump IMX5 data to buffer:");
       // Serial.println(bitesToWrite);
-      IMX5.readBytes(tempBuffer, bitesToWrite);
-      // for(int i=0;i<bitesToWrite;i++){ tempBuffer[i]=IMX5.read();}
-      writeToBuffer(tempBuffer, bitesToWrite);
-      // Serial.write(tempBuffer, bitesToWrite);
-      Serial.print("I");
-      Serial.print(bitesToWrite);
-      logTime_IMX5 = millis();
+      // Serial.write(tempBuffer, bitesToWrite);     
+      // Serial.print("I");
+      // Serial.print(bitesToWrite);
+      // Serial.print("t");
+      // Serial.print(logTime_IMX5);
+      
       delay(1);
     }
 
@@ -1127,14 +1168,19 @@ void loop() {
       if (tempBufferSize < bitesToWrite) {
         bitesToWrite = tempBufferSize;
       }
-      // Serial.print("Dump Laser data to buffer:");
-      // Serial.println(bitesToWrite);
+
       RS232.readBytes(tempBuffer, bitesToWrite);
       writeToBuffer(tempBuffer, bitesToWrite);
-      Serial.print("L");
-      Serial.print(bitesToWrite);
-      // Serial.write(tempBuffer, bitesToWrite);
       logTime_laser = millis();
+      
+      // Serial.print("Dump Laser data to buffer:");
+      // Serial.println(bitesToWrite);
+      // Serial.print("L");
+      // Serial.print(bitesToWrite);
+      // Serial.print("t");
+      // Serial.print(logTime_laser);
+      // Serial.write(tempBuffer, bitesToWrite);
+      
       delay(1);
     }
 
@@ -1143,13 +1189,14 @@ void loop() {
     //  Write data to SD
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if (((myBufferSize + BufferTail - BufferHead) % myBufferSize) > sdWriteSize) {
-      Serial.println(" ");
-      Serial.print("Total bytes in buffer:");
-      Serial.print((myBufferSize + BufferTail - BufferHead) % myBufferSize);
-      Serial.print(", buffer tail:");
-      Serial.print(BufferTail);
-      Serial.print(", buffer head:");
-      Serial.print(BufferHead);
+      // Serial.println(" ");
+      // Serial.print("Total bytes in buffer:");
+      // Serial.print((myBufferSize + BufferTail - BufferHead) % myBufferSize);
+      // Serial.print(", buffer tail:");
+      // Serial.print(BufferTail);
+      // Serial.print(", buffer head:");
+      // Serial.print(BufferHead);
+      lastTime = millis();
       // write data to buffer
       if ((BufferHead + sdWriteSize) < myBufferSize) {  // case head + sdWritesize smaller than buffer size
         for (int i = 0; i < sdWriteSize; i++) {
@@ -1159,7 +1206,7 @@ void loop() {
       } else {
         int a = myBufferSize - BufferHead;
         for (int i = 0; i < a; i++) {
-          myBuffer[i] = tempBuffer[BufferHead];
+          tempBuffer[i] = myBuffer[BufferHead];
           BufferHead++;
         }
         BufferHead = 0;
@@ -1168,26 +1215,45 @@ void loop() {
           BufferHead++;
         }
       }
+      lastTime2 = millis();
+      // Write position of bufferHead and marker at end of buffer. Used for debugging!
+      // tempBuffer[sdWriteSize-5]=BufferHead/1000+'0';
+      // tempBuffer[sdWriteSize-4]=BufferHead/100%10+'0';
+      // tempBuffer[sdWriteSize-3]=BufferHead/10%10+'0';
+      // tempBuffer[sdWriteSize-2]=BufferHead%10+'0';
+      // tempBuffer[sdWriteSize-1]='%';
+
+
       dataFile.write(tempBuffer, sdWriteSize);
+      lastTime3 = millis();
       Serial.print(",Data written:");
-      Serial.println(sdWriteSize);
+      Serial.print(sdWriteSize);
+      // Serial.print(" ,write to tempBuffer (ms):");
+      // Serial.print(lastTime2-lastTime);
+      Serial.print(" , in time (ms):");
+      Serial.println(lastTime3-lastTime);
       // Serial.write( tempBuffer, sdWriteSize);
       delay(1);
     }
 
-    // // check data in buffer once per 10 seconds
-    // // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if (millis() > (lastPrint + 10000)) {  //
-      Serial.print("Data in Buffer:");
-      Serial.println((myBufferSize + BufferTail - BufferHead) % myBufferSize);
-      Serial.print("Data in IMX5:");
-      Serial.println(IMX5.available());
-      Serial.print("Data in Laser:");
-      Serial.println(RS232.available());
-      BLE_message = true;
-      strcpy(txString, ":");
-      lastPrint = millis();  // Update lastPrint
-    }
+
+    //==========================================================
+
+
+
+    // // // check data in buffer once per 10 seconds
+    // // // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // if (millis() > (lastPrint + 10000)) {  //
+    //   Serial.print("Data in Buffer:");
+    //   Serial.println((myBufferSize + BufferTail - BufferHead) % myBufferSize);
+    //   Serial.print("Data in IMX5:");
+    //   Serial.println(IMX5.available());
+    //   Serial.print("Data in Laser:");
+    //   Serial.println(RS232.available());
+    //   BLE_message = true;
+    //   strcpy(txString, ":");
+    //   lastPrint = millis();  // Update lastPrint
+    // }
 
     // flush Laser buffer if stuck
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -1214,7 +1280,7 @@ void loop() {
     }
 
   } else {
-    delay(10);
+    delay(50);  // wait 50 ms if not logging
   }
 
 
