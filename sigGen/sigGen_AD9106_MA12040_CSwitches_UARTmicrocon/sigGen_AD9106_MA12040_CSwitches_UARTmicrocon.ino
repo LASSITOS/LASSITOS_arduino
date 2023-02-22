@@ -78,6 +78,10 @@ int PIN_Tx = 32; // Hardware TX pin,
 #define baudrateUART 115200 
 int loggingTime=30;   // duration of data recording 
 
+#define myBufferSize 2048
+#define UARTBufferSize 2048
+char myBuffer[myBufferSize];
+
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
@@ -108,7 +112,7 @@ uint64_t clock_divider=1;
 uint64_t AWG_clock_freq = 125000000;
 
 uint16_t freqAdd;
-uint64_t freq=3000;
+// uint64_t freq;
 uint16_t freqDat;
 float gain=0;
 uint16_t gainDAT = 0x1000;
@@ -163,7 +167,7 @@ void Send_tx_String(char *txString);
 #define F2 4618
 #define F3 8651
 uint64_t freqs[] ={F1,F3};
-freq=F3;
+uint64_t freq=F3;
 
 #define CALF1 1055
 #define CALF2 4744
@@ -209,6 +213,7 @@ void testBasics(){
    }
    delay(1000);
    stopMicro();
+   delay(200);
    strcpy(txString,"End of test");
    Send_tx_String(txString) ;
 }
@@ -235,7 +240,7 @@ void frequencySweep(int start,int stp,int Delta){
 		  // Play the note for a quarter of a second.
 		  freq=i*Delta;
 		  configureSineWave();
-		  sprintf(txString,"New frequency is: %d",freq );
+		  sprintf(txString,",f: %d",freq );
 		  Send_tx_String(txString); 
 		  digitalWrite(PIN_MUTE , HIGH);  // unmute
 		  run();
@@ -281,7 +286,7 @@ void GainSweep(int start,int stp,int Delta){
 	  for (int j=0; j<2; ++j) {
 		  freq=freqs[j];
 		  configureSineWave();
-		  sprintf(txString,"New frequency is: %d",freq );
+		  sprintf(txString,",f: %d",freq );
 		  Send_tx_String(txString); 
       if(j==0){ 
         digitalWrite(PIN_GPIOswitch , HIGH);
@@ -296,7 +301,7 @@ void GainSweep(int start,int stp,int Delta){
 			  // Play the note for a quarter of a second.
 			  gainDAT=i*Delta;
 			  setGain2(gainDAT);
-			  sprintf(txString,"New gain is: %d",gainDAT );
+			  sprintf(txString,",g: %d",gainDAT );
 			  Send_tx_String(txString); 
 			  digitalWrite(PIN_MUTE , HIGH);  // unmute
 			  run();
@@ -322,18 +327,24 @@ void GainSweep(int start,int stp,int Delta){
 
 void recordMicro(float duration){
 
-  UARTmicro.write('N');
-  delay(1000);
-  UARTmicro.write('D');
-  delay(1000);
-  UARTmicro.write('C');
-  delay(2000);
-  UARTmicro.write('S');
+  // UARTmicro.write('N');
+  // delay(1000);
+  // UARTmicro.write('D');
+  // delay(1000);
+  // UARTmicro.write('C');
+  // delay(2000);
+  // UARTmicro.write('S');
+  // delay(int(1000*duration));  
+  // UARTmicro.write('T');
+  startMicro();
   delay(int(1000*duration));  
-  UARTmicro.write('T');
+  stopMicro();
 }
 
 void startMicro(){
+  while (UARTmicro.read() >= 0)
+    ;	
+	
   UARTmicro.write('N');
   delay(1000);
   UARTmicro.write('D');
@@ -345,6 +356,26 @@ void startMicro(){
 
 void stopMicro(){ 
   UARTmicro.write('T');
+  
+  if (UARTmicro.available()) {
+      int bitesToWrite = UARTmicro.available();
+      Serial.print("UARTmicro available (bytes): ");
+      Serial.print(bitesToWrite);
+      for (int i=0; i<bitesToWrite;i++){
+        myBuffer[i]=UARTmicro.read();
+      }
+      
+      myBuffer[bitesToWrite]='\0';
+	  // Serial.write(myBuffer, bitesToWrite);
+      strcpy(txString,"Output Microcontroller:");
+      Send_tx_String(txString);
+      Send_tx_String(myBuffer);
+    } else{
+      strcpy(txString,"No output from Microcontroller!");
+      Send_tx_String(txString);
+    }
+    
+
 }
 
 
@@ -585,7 +616,6 @@ void parse( String rxValue){
   } else if (rxValue.indexOf("TEST") != -1 or rxValue.indexOf("test") != -1) { 
 	testBasics();
     
-	  
   } else if (rxValue.indexOf("FSWEEP") != -1 or rxValue.indexOf("fsweep") != -1) { 
     Serial.println("Got freq sweep command");
     int index = rxValue.indexOf(":");
@@ -633,11 +663,23 @@ void parse( String rxValue){
     }  
  
   } else if (rxValue.indexOf("RECORD") != -1 or rxValue.indexOf("record") != -1 ) {
-	  strcpy(txString,"ADC recording started");
-    Send_tx_String(txString) ;
-	  recordMicro(loggingTime); 
-    strcpy(txString,"ADC recording stopped");
-    Send_tx_String(txString) ;
+	  int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+      loggingTime=rxValue.substring(index+1,index2).toInt();
+      sprintf(txString,"Record duration is: %d s",loggingTime );
+      strcat(txString,", ADC recording started");
+      Send_tx_String(txString) ;
+      recordMicro(loggingTime); 
+      strcpy(txString,"ADC recording stopped");
+      Send_tx_String(txString) ;
+
+    } else {
+      sprintf(txString,"Recording duration (s) can not be parsed from string '%s''",rxValue);
+      Serial.println(txString);
+    }
+    
+
     
   } else if (rxValue.indexOf("TRIGGER") != -1) {
 	  trigger();
@@ -681,7 +723,9 @@ void parse( String rxValue){
       sprintf(txString,"Gain can not be parsed from string '%s''",rxValue);
       Serial.println(txString);
     }
-   // Read register 	
+
+    
+   // Read SPI register 	
   } else if (rxValue.substring(0,4)== "SPIR"  and rxValue.charAt(5)== 'R') {
 
 	  rxValue.substring(4,8).toCharArray(addrStr,8);
@@ -694,7 +738,7 @@ void parse( String rxValue){
 	  Serial.println(out,BIN);
 
 	  
-  // Write to register    
+  // Write to SPI register    
   } else if (rxValue.indexOf("SPIW") != -1  and (rxValue.charAt(8) == 'X' or rxValue.charAt(8) == 'B')) {
 	  if(rxValue.charAt(8) == 'X'){
 		  rxValue.substring(9,15).toCharArray(datStr,7);
@@ -751,7 +795,7 @@ void parse( String rxValue){
       Serial.println(txString);
     }
 
-    // Read register  I2C
+    // Set new state for GPIO controlled CSwitch
   }else if (rxValue.indexOf("SETGPIOSW") != -1) {
  
   Serial.println("Setting new state for GPIO controlled CSwitch.");
@@ -995,7 +1039,8 @@ void setup(){
 	
 	//setup UART to microcontroller
 	UARTmicro.begin(baudrateUART,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
-        
+    UARTmicro.setRxBufferSize(UARTBufferSize);
+   
 }
 
 
