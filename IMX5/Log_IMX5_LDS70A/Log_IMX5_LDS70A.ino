@@ -46,6 +46,7 @@ long lastTime = 0;  //Simple local timer
 long lastTime1 = 0;  //Simple local timer
 long lastTime2 = 0;  //Simple local timer
 long lastTime3 = 0;  //Simple local timer
+long lastTime_STROBE =0;
 long lastTime_flushSD = 0;
 long logTime_laser;
 long logTime_IMX5;
@@ -103,13 +104,15 @@ int PIN_Tx = 17;  // 17 = Hardware TX pin,
 // settings INS IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 //PINs can be changed to any pin. // For Hardware Serial use Pin 16 an 17. SoftwareSerial worked on pins 12 and 27
-int IMX5_Rx = 26;  //  Hardware RX pin, to PIN10 on IMX5
-int IMX5_Tx = 25;  //  Hardware TX pin, to PIN8 on IMX5
+int  IMX5_Rx = 26;  //  Hardware RX pin, to PIN10 on IMX5
+int  IMX5_Tx =25;  //  Hardware TX pin, to PIN8 on IMX5
+int  PIN_PPS =36;  //  GPIO for PPS, to  PIN5 on IMX5
+int  IMX5_strobe = 4; //  GPIO for STROBE input (first), to  PIN2 on IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define baudrateIMX5 230400  //115200
 #define IMX5_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
 #define IMX5_log_intervall 2000
-
+#define flushSD_STROBE  5000
 char asciiMessage[] = "$ASCB,512,,,100,,,,30000,,30000,,,";  // // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 
 char asciiMessageformatted[128];
@@ -225,6 +228,9 @@ void setupINS() {
     ;
   Serial.println(F("INS setting updated"));
   strcat(txString, "INS setting updated");
+
+  pulseStrobeIMX5();  
+  lastTime_STROBE = millis();
 }
 
 
@@ -329,6 +335,11 @@ void setIMX5message(){
 }
 
 
+void pulseStrobeIMX5(){
+ digitalWrite(IMX5_strobe, HIGH);
+ delay(1);
+ digitalWrite(IMX5_strobe, LOW);
+}
 // /////////////////////////////////////////////
 // ---------------------------------------------
 // SD card funtions und code
@@ -704,7 +715,7 @@ void stop_logging(fs::FS &fs) {
   LED_blink(25, 4);
   Write_stop();
   dataFile.close();  // Close the data file
-  Serial.println("Datafile closed.");
+  Serial.println("Datafile closed.");                                                                                   
   Serial.println("Measurement stopped successfully");
 }
 
@@ -1058,7 +1069,8 @@ void setup() {
   IMX5.begin(baudrateIMX5, SERIAL_8N1, IMX5_Rx, IMX5_Tx);  // Use this for HardwareSerial
   IMX5.setRxBufferSize(IMX5_BufferSize);
   Serial.println("Started serial to IMX5");
-
+  pinMode(IMX5_strobe, OUTPUT);
+  digitalWrite(IMX5_strobe, LOW);
 
 
   // Setup BLE connection
@@ -1240,6 +1252,14 @@ void loop() {
     //==========================================================
 
 
+    // Send strobe plse every "strobe_intervall"
+    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    if (lastTime_STROBE + flushSD_STROBE < millis()) {
+      pulseStrobeIMX5();
+      Serial.println("STROBE");
+      lastTime_STROBE = millis(); 
+    }
+   
 
     // // // check data in buffer once per 10 seconds
     // // // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -1278,6 +1298,8 @@ void loop() {
       lastTime_flushSD = millis();
       Serial.println("flushed");
     }
+
+
 
   } else {
     delay(50);  // wait 50 ms if not logging
