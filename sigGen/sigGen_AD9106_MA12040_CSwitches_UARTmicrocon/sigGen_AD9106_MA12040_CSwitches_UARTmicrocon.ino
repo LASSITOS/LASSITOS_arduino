@@ -76,7 +76,7 @@ int PIN_Rx = 14; //  Hardware RX pin,
 int PIN_Tx = 32; // Hardware TX pin,
 
 #define baudrateUART 115200 
-int loggingTime=30;   // duration of data recording 
+int loggingTime=10;   // duration of data recording 
 
 #define myBufferSize 2048
 #define UARTBufferSize 2048
@@ -352,11 +352,30 @@ void startMicro(){
   UARTmicro.write('C');
   delay(2000);
   UARTmicro.write('S');
+  delay(3000);
+  if (UARTmicro.available()) {
+      int bitesToWrite = UARTmicro.available();
+      Serial.print("UARTmicro available (bytes): ");
+      Serial.println(bitesToWrite);
+      for (int i=0; i<bitesToWrite;i++){
+        myBuffer[i]=UARTmicro.read();
+      }
+      
+      myBuffer[bitesToWrite]='\0';
+	  // Serial.write(myBuffer, bitesToWrite);
+      strcpy(txString,"Output Microcontroller:");
+      Send_tx_String(txString);
+      Send_tx_String(myBuffer);
+    } else{
+      strcpy(txString,"No output from Microcontroller!/n");
+      Send_tx_String(txString);
+    }
+  
 }
 
 void stopMicro(){ 
   UARTmicro.write('T');
-  
+  delay(1000);
   if (UARTmicro.available()) {
       int bitesToWrite = UARTmicro.available();
       Serial.print("UARTmicro available (bytes): ");
@@ -661,12 +680,26 @@ void parse( String rxValue){
       sprintf(txString,"Start, Stop and delta can not be parsed form string: '%s''",rxValue);
       Serial.println(txString);
     }  
+    
+   } else if (rxValue.indexOf("RECORD") != -1 or rxValue.indexOf("record") != -1 ) {
+	  strcat(txString,"ADC recording started");
+    Send_tx_String(txString) ;
+    recordMicro(loggingTime); 
+    
  
-  } else if (rxValue.indexOf("RECORD") != -1 or rxValue.indexOf("record") != -1 ) {
-	  int index = rxValue.indexOf(":");\
+  } else if (rxValue.indexOf("MEAS") != -1 or rxValue.indexOf("meas") != -1 ) {
+	  Serial.println("Msg: ");
+    Serial.print(rxValue);
+    int index = rxValue.indexOf(":");
     int index2 = rxValue.indexOf(":",index+1);
+    Serial.print("index1: ");
+    Serial.print(index);
+    Serial.println("index2: ");
+    Serial.print(index2);
     if (index !=-1 and index2 !=-1){
       loggingTime=rxValue.substring(index+1,index2).toInt();
+      Serial.println("Logging time: ");
+      Serial.print(loggingTime);
       sprintf(txString,"Record duration is: %d s",loggingTime );
       strcat(txString,", ADC recording started");
       Send_tx_String(txString) ;
