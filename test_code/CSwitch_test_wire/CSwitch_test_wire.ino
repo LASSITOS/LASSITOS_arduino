@@ -14,7 +14,7 @@
 #include <Wire.h>
 
 
-#define  CSwitchTx_address 0x21
+#define  CSwitchTx_address 0x24
 #define  CSwitchCal_address 0x26
 #define  MA12070P_address 0x20
 uint8_t CSwitch =0 ;  // Controlling witch switch is open. 0 all a close.  1 for first, 2 for second,   4  for third. Sum for combinations. 
@@ -41,9 +41,10 @@ char subString[20];
 // /////////////////////////////////////////////
 void setCswitchTx ( uint8_t state ){
 
-   CSwitch_code = 0xFF-((state>>2)*3 )<<6 ;// parse first bit
-   CSwitch_code = CSwitch_code - ((state>>1)%2*3 )<<4 ;// parse second bit
-   CSwitch_code = CSwitch_code - ((state)%2*3 )<<2  ;  // parse third bit
+  //  CSwitch_code = 0xFF-((state>>2)*3 )<<6 ;// parse first bit
+  //  CSwitch_code = CSwitch_code - ((state>>1)%2*3 )<<4 ;// parse second bit
+  //  CSwitch_code = CSwitch_code - ((state)%2*3 )<<2  ;  // parse third bit
+  CSwitch_code = 0xFF-state;
 
 	 //Write message to the slave
 	 Serial.printf("New state is: %d\n", state);
@@ -121,7 +122,7 @@ void parse( String rxValue){
     }
 
   
-    // Read register  I2C
+    // Set new values on CSwitch calibration 
   }else if (rxValue.indexOf("SETCSW") != -1) {
  
   Serial.println("Setting new state for calibration coil CSwitch.");

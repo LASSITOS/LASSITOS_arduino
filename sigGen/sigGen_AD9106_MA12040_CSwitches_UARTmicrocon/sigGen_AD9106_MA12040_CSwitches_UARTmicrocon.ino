@@ -78,8 +78,8 @@ int PIN_Tx = 32; // Hardware TX pin,
 #define baudrateUART 115200 
 int loggingTime=10;   // duration of data recording 
 
-#define myBufferSize 2048
-#define UARTBufferSize 2048
+#define myBufferSize 8192
+#define UARTBufferSize 4096
 char myBuffer[myBufferSize];
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -92,7 +92,7 @@ char myBuffer[myBufferSize];
 
 #include <Wire.h>
 #define  MA12070P_address 0x20
-#define  CSwitchTx_address 0x21
+#define  CSwitchTx_address 0x24
 #define  CSwitchCal_address 0x26
 uint8_t CSwitch =0 ;  // Controlling witch switch is open. 0 all a close.  1 for first, 2 for second,   4  for third. Sum for combinations. 
 uint8_t  CSwitch_code =0xFF;
@@ -164,19 +164,70 @@ void Send_tx_String(char *txString);
 //resonant frequencies:
 
 #define F1 1061
-#define F2 4618
-#define F3 8651
-uint64_t freqs[] ={F1,F3};
+#define F2 2283
+#define F3 4618
+#define F4 8651
+
+uint64_t freqs[] ={F1,F2,F3,F4};
 uint64_t freq=F3;
+
+#define stateF1 0x80
+#define stateF2 0x40
+#define stateF3 0x02
+#define stateF4 0x01
+#define stateF5 0x10
+#define stateF6 0x08
+uint8_t CSw_states[] ={stateF1,stateF2,stateF3,stateF4};
 
 #define CALF1 1055
 #define CALF2 4744
 #define CALF3 8805
 int CAL_states[]={0,1,2,4};
 
-#define MAXGAIN 0x2000
+#define MAXGAIN 0x3000
 
-void testBasics(){
+
+void testLong(){
+	delay(500);
+	strcpy(txString,"Starting long test");
+	Send_tx_String(txString) ;
+	startMicro();   // start recording of ADC data for given duration in seconds
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  delay(5000);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  delay(1000);
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+	for (int i=0; i<4; ++i) {
+		freq=freqs[i];
+		configureSineWave();
+		sprintf(txString,"New frequency is: %d",freq );
+		Send_tx_String(txString); 
+    // if(i==0){ 
+    //   digitalWrite(PIN_GPIOswitch , HIGH);
+    // }else{
+    //   digitalWrite(PIN_GPIOswitch , LOW);
+    // }
+    setCswitchTx(CSw_states[i]);
+    delay(10);
+    digitalWrite(PIN_MUTE , HIGH);  // unmute
+    run();
+    trigger();
+    delay(5000);
+    // Pause for a tenth of a second between notes.
+    stop_trigger();
+    digitalWrite(PIN_MUTE , LOW);  // mute
+    delay(200);
+		}
+   
+   delay(1000);
+   stopMicro();
+   delay(200);
+   strcpy(txString,"End of test");
+   Send_tx_String(txString) ;
+}
+
+void testCal(){
 	delay(500);
 	strcpy(txString,"Starting basic test");
 	Send_tx_String(txString) ;
@@ -187,16 +238,17 @@ void testBasics(){
   delay(1000);
   digitalWrite(PIN_MUTE , LOW);  // mute
   
-	for (int i=0; i<2; ++i) {
+	for (int i=0; i<4; ++i) {
 		freq=freqs[i];
 		configureSineWave();
 		sprintf(txString,"New frequency is: %d",freq );
 		Send_tx_String(txString); 
-    if(i==0){ 
-      digitalWrite(PIN_GPIOswitch , HIGH);
-    }else{
-      digitalWrite(PIN_GPIOswitch , LOW);
-    }
+    setCswitchTx(CSw_states[i]);
+    // if(i==0){ 
+    //   digitalWrite(PIN_GPIOswitch , HIGH);
+    // }else{
+    //   digitalWrite(PIN_GPIOswitch , LOW);
+    // }
     
 		for (int j=0; j<4; ++j) {
 			setCswitchCal(CAL_states[j]);
@@ -243,9 +295,10 @@ void frequencySweep(int start,int stp,int Delta){
 		  sprintf(txString,",f: %d",freq );
 		  Send_tx_String(txString); 
 		  digitalWrite(PIN_MUTE , HIGH);  // unmute
-		  run();
-		  trigger();
-		  delay(250);
+		  // run();
+		  // trigger();
+      run2();
+		  delay(200);
 		  // Pause for a tenth of a second between notes.
 		  stop_trigger();
 		  digitalWrite(PIN_MUTE , LOW);  // mute
@@ -288,13 +341,14 @@ void GainSweep(int start,int stp,int Delta){
 		  configureSineWave();
 		  sprintf(txString,",f: %d",freq );
 		  Send_tx_String(txString); 
-      if(j==0){ 
-        digitalWrite(PIN_GPIOswitch , HIGH);
-        delay(10);
-      }else{
-        digitalWrite(PIN_GPIOswitch , LOW);
-        delay(10);
-      }
+      setCswitchTx(CSw_states[j]);
+      // if(j==0){ 
+      //   digitalWrite(PIN_GPIOswitch , HIGH);
+      //   delay(10);
+      // }else{
+      //   digitalWrite(PIN_GPIOswitch , LOW);
+      //   delay(10);
+      // }
 
       
 		  for (int i=A; i<B; ++i) {
@@ -325,7 +379,7 @@ void GainSweep(int start,int stp,int Delta){
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
-void recordMicro(float duration){
+void recordMicro(int duration){
 
   // UARTmicro.write('N');
   // delay(1000);
@@ -337,7 +391,7 @@ void recordMicro(float duration){
   // delay(int(1000*duration));  
   // UARTmicro.write('T');
   startMicro();
-  delay(int(1000*duration));  
+  delay(1000*duration);  
   stopMicro();
 }
 
@@ -388,7 +442,9 @@ void stopMicro(){
 	  // Serial.write(myBuffer, bitesToWrite);
       strcpy(txString,"Output Microcontroller:");
       Send_tx_String(txString);
+      delay(200);
       Send_tx_String(myBuffer);
+      delay(200);
     } else{
       strcpy(txString,"No output from Microcontroller!");
       Send_tx_String(txString);
@@ -406,9 +462,10 @@ void stopMicro(){
 // /////////////////////////////////////////////
 void setCswitchTx ( uint8_t state ){
 
-   CSwitch_code = 0xFF-((state>>2)*3 )<<6 ;// parse first bit
-   CSwitch_code = CSwitch_code - ((state>>1)%2*3 )<<4 ;// parse second bit
-   CSwitch_code = CSwitch_code - ((state)%2*3 )<<2  ;  // parse third bit
+  //  CSwitch_code = 0xFF-((state>>2)*3 )<<6 ;// parse first bit
+  //  CSwitch_code = CSwitch_code - ((state>>1)%2*3 )<<4 ;// parse second bit
+  //  CSwitch_code = CSwitch_code - ((state)%2*3 )<<2  ;  // parse third bit
+   CSwitch_code = 0xFF-state;
 
 	 //Write message to the slave
 	 Serial.printf("New state is: %d\n", state);
@@ -514,6 +571,12 @@ void run(){
   Serial.print("New run mode:");
   Serial.println(out,BIN);
 }
+
+void run2(){
+  writeReg(0x1E,0x0001);
+  trigger();
+}
+
 void program(){
   digitalWrite(triggerGPIO,HIGH);
   writeReg(0x1E,0x0000);
@@ -521,14 +584,14 @@ void program(){
 void trigger(){
   Serial.println("[AWG] Triggerring");
   digitalWrite(triggerGPIO,HIGH);
-  delay(100);
+  delay(1);
   digitalWrite(triggerGPIO,LOW);
 }
 
 void stop_trigger(){
   Serial.println("Stop triggerring");
   digitalWrite(triggerGPIO,LOW);
-  delay(100);
+  delay(1);
   digitalWrite(triggerGPIO,HIGH);
   writeReg(0x1E,0x0000);
 }
@@ -632,9 +695,13 @@ void parse( String rxValue){
     stop_trigger();
     digitalWrite(PIN_MUTE , LOW);  // mute
      
-  } else if (rxValue.indexOf("TEST") != -1 or rxValue.indexOf("test") != -1) { 
-	testBasics();
-    
+  } else if (rxValue.indexOf("TESTCAL") != -1 or rxValue.indexOf("testcal") != -1) { 
+	testCal();
+
+  } else if (rxValue.indexOf("TESTLONG") != -1 or rxValue.indexOf("testlong") != -1) { 
+	Serial.println("Starting long test");
+  testLong();
+
   } else if (rxValue.indexOf("FSWEEP") != -1 or rxValue.indexOf("fsweep") != -1) { 
     Serial.println("Got freq sweep command");
     int index = rxValue.indexOf(":");
@@ -692,14 +759,10 @@ void parse( String rxValue){
     Serial.print(rxValue);
     int index = rxValue.indexOf(":");
     int index2 = rxValue.indexOf(":",index+1);
-    Serial.print("index1: ");
-    Serial.print(index);
-    Serial.println("index2: ");
-    Serial.print(index2);
     if (index !=-1 and index2 !=-1){
       loggingTime=rxValue.substring(index+1,index2).toInt();
-      Serial.println("Logging time: ");
-      Serial.print(loggingTime);
+      // Serial.println("Logging time: ");
+      // Serial.print(loggingTime);
       sprintf(txString,"Record duration is: %d s",loggingTime );
       strcat(txString,", ADC recording started");
       Send_tx_String(txString) ;
@@ -837,8 +900,10 @@ void parse( String rxValue){
     if (index !=-1 and index2 !=-1){
       if (rxValue.substring(index+1,index2).toInt()==1){
 			   digitalWrite(PIN_GPIOswitch , HIGH);
+         strcpy(txString,"GPIO set to HIGH");
       }else {
 			   digitalWrite(PIN_GPIOswitch , LOW);
+         strcpy(txString,"GPIO set to LOW");
 	    }
 
     } else {
@@ -920,11 +985,13 @@ class MyCallbacks: public BLECharacteristicCallbacks {
               
       		Serial.println("*********");
           Serial.println("Received Value: ");
+          Serial.print(rxValue2);
           Serial.println("*********");
       		BLE_message=true;
-      		sprintf(subString,"BLE input: %s\n",rxValue2);
-          strcat(txString,subString);
-      		
+      		// sprintf(subString,"BLE input: %s\n",rxValue2);
+          // strcpy(txString,subString);
+          // Send_tx_String(txString);
+          // delay(100);
       		parse(rxValue2);
       }
     }
@@ -1016,12 +1083,12 @@ void setup(){
 	
 	// Set the initial state of the pins on the PCF8574 devices
 	Wire.beginTransmission(CSwitchTx_address); // device 1
-    Wire.write(0x00); // all ports off
+    Wire.write(0xff); // all ports off
     uint8_t error = Wire.endTransmission();
     Serial.printf("endTransmission on CSwitch Tx: %u\n", error);
     Wire.begin();
     Wire.beginTransmission(CSwitchCal_address); // device 2
-    Wire.write(0x00); // all ports off
+    Wire.write(0xff); // all ports off
     error = Wire.endTransmission();
     Serial.printf("endTransmission on CSwitch CalibCoil: %u\n", error);
 	

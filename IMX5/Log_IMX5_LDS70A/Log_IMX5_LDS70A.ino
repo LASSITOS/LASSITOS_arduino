@@ -1252,7 +1252,7 @@ void loop() {
     //==========================================================
 
 
-    // Send strobe plse every "strobe_intervall"
+    // Send strobe pulse every "strobe_intervall"
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if (lastTime_STROBE + flushSD_STROBE < millis()) {
       pulseStrobeIMX5();
