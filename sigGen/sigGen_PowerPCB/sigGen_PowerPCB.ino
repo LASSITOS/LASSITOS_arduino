@@ -41,12 +41,12 @@ int statLED = 13;
 
 // settings SPI
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-#define SCK  23
+#define SCK  18
 #define MISO  19
-#define MOSI  16
-#define CS  18
+#define MOSI  23
+#define CS  14
 #define SPI_rate 10000000
-#define triggerGPIO 04        
+#define triggerGPIO 32        
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
@@ -72,8 +72,8 @@ char subString[20];
 #include <HardwareSerial.h>
 HardwareSerial UARTmicro(2);
 
-int PIN_Rx = 14; //  Hardware RX pin,
-int PIN_Tx = 32; // Hardware TX pin,
+int PIN_Rx = 15; //  Hardware RX pin,
+int PIN_Tx = 33; // Hardware TX pin,
 
 #define baudrateUART 115200 
 int loggingTime=10;   // duration of data recording 
@@ -100,16 +100,16 @@ uint8_t  CSwitch_code =0xFF;
 // PCF8574 I2C_cSwitchTx(CSwitchTx_address);
 // PCF8574 I2C_Calib(CSwitchCal_address);
 
-#define PIN_EN 33    // must be =1 at startup
-#define PIN_MUTE 15  // must be =0 at startup
+#define PIN_EN 27    // must be =1 at startup
+#define PIN_MUTE 12  // must be =0 at startup
 
-#define PIN_GPIOswitch 27 //GPIO used for switching SSR directly over GPIO
+#define PIN_GPIOswitch 13 //GPIO used for switching SSR directly over GPIO
 
 
 // Sinus function variables
 //-=-=-=-=-=-=-=-=-=-=-=-
 uint64_t clock_divider=1;
-uint64_t AWG_clock_freq = 125000000;
+uint64_t AWG_clock_freq =125000000; // 7372800; // 125000000; 
 
 uint16_t freqAdd;
 // uint64_t freq;
@@ -172,6 +172,7 @@ uint64_t freqs[] ={F1,F2,F3,F4};
 uint64_t freq=F3;
 int Nfreq=4;  //Number of frequencies to use
 
+// states of CSwitch for each frequencz
 #define stateF1 0x80
 #define stateF2 0x40
 #define stateF3 0x02
@@ -272,45 +273,6 @@ void testCal(){
    Send_tx_String(txString) ;
 }
 
-
-void testCal2(){
-	delay(500);
-	strcpy(txString,"Starting cal test");
-	Send_tx_String(txString) ;
-	startMicro();   // start recording of ADC data for given duration in seconds
-  digitalWrite(PIN_MUTE , LOW);  // mute
-  delay(1000);
-  digitalWrite(PIN_MUTE , HIGH);  // unmute
-  delay(1000);
-  digitalWrite(PIN_MUTE , LOW);  // mute
-  setCswitchCal("0x00");
-  
-	for (int i=0; i<Nfreq; ++i) {
-		freq=freqs[i];
-		configureSineWave();
-		delay(10);
-		digitalWrite(PIN_MUTE , HIGH);  // unmute
-    run2();
-    trigger();
-    delay(500);
-		for (int j=0; j<4; ++j) {
-			setCswitchCal(CAL_states[j]);
-      delay(500);
-      setCswitchCal("0x00");
-      delay(100);
-		}
-   stop_trigger();
-   digitalWrite(PIN_MUTE , LOW);  // mute
-	 delay(200);
-   }
-   delay(500);
-   stopMicro();
-   delay(200);
-   strcpy(txString,"End of test");
-   Send_tx_String(txString) ;
-}
-
-
 void frequencySweep(int start,int stp,int Delta){
 	  int A=start/Delta;
 	  int B=stp/Delta;
@@ -387,8 +349,7 @@ void GainSweep(int start,int stp,int Delta){
       
 		  for (int i=A; i<B; ++i) {
 			  // Play the note for a quarter of a second.
-			  gainDAT=i*Delta;
-			  setGain2(gainDAT);
+			  setGain2(i*Delta);
 			  // sprintf(txString,",g: %d",gainDAT ); 
 			  digitalWrite(PIN_MUTE , HIGH);  // unmute
 			  run2();
@@ -408,6 +369,47 @@ void GainSweep(int start,int stp,int Delta){
 }
 
 
+void GainSweep2(int start,int stp,int Delta){
+  // Same as GainSweep but don't go over different frequencies!
+
+    if(stp>MAXGAIN){
+      sprintf(txString,"Stop gain is larger then maximum gain: %04X",MAXGAIN );
+      Serial.print("STOP");
+      Serial.println(stp);
+      Serial.print("Maxgain");
+      Serial.println(MAXGAIN);
+      Send_tx_String(txString) ;
+      return;
+      }
+    
+	  int A=start/Delta;
+	  int B=stp/Delta;
+	  
+	  delay(500);
+	  strcpy(txString,"Starting gain sweep V2");
+	  Send_tx_String(txString) ;
+	  startMicro();   // start recording of ADC data for given duration in seconds
+	  delay(2000);      
+		  for (int i=A; i<B; ++i) {
+			  // Play the note for a quarter of a second.
+			  setGain2(i*Delta);
+			  // sprintf(txString,",g: %d",gainDAT ); 
+			  digitalWrite(PIN_MUTE , HIGH);  // unmute
+			  run2();
+			  trigger();
+			  delay(1000);
+			  // Pause for a tenth of a second between notes.
+			  stop_trigger();
+			  digitalWrite(PIN_MUTE , LOW);  // mute
+			  delay(100);
+		  }
+		delay(1000);
+    Send_tx_String(txString);
+    stopMicro();
+	  strcpy(txString,"End of sweep");
+	  Send_tx_String(txString) ;
+}
+
 void FsubSweep(int Df,int Delta){
 	  delay(200);
 	  strcpy(txString,"Starting f sweep around res. freqs.");
@@ -423,19 +425,18 @@ void FsubSweep(int Df,int Delta){
 	    int B=stop/Delta;
       Serial.print("Main freq:");
       Serial.println(mainfreq);
-      setCswitchTx(CSw_states[j]);
-      delay(50);
     
       for (int i=A; i<B+1; ++i) {
         freq=i*Delta;
         configureSineWave();
+        setCswitchTx(CSw_states[j]);
         sprintf(subString,"f: %d",freq );
         // strcat(txString,subString);
         Serial.print(subString);
         digitalWrite(PIN_MUTE , HIGH);  // unmute
         run2();
         trigger();
-        delay(300);
+        delay(500);
         stop_trigger();
         digitalWrite(PIN_MUTE , LOW);  // mute
         delay(50);
@@ -596,7 +597,27 @@ uint8_t readRegI2C (uint8_t device, uint8_t address){
   return  temp;
 }
 
+void scanI2C (){
+  byte error, address;
+  int nDevices = 0;
 
+  delay(5000);
+
+  Serial.println("Scanning for I2C devices ...");
+  for(address = 0x01; address < 0x7f; address++){
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission();
+    if (error == 0){
+      Serial.printf("I2C device found at address 0x%02X\n", address);
+      nDevices++;
+    } else if(error != 2){
+      Serial.printf("Error %d at address 0x%02X\n", error, address);
+    }
+  }
+  if (nDevices == 0){
+    Serial.println("No I2C devices found");
+  }
+}
 
 
 // /////////////////////////////////////////////
@@ -612,20 +633,10 @@ void configureSineWave(){
   uint64_t freqTW=temp/AWG_clock_freq;  // get frequency tuning word 0x1000000=2**24
   uint16_t freqMSB=freqTW>>8;
   uint16_t freqLSB=(freqTW&0xFF)<<8;
-//  Serial.print("freq");
-//  Serial.println(freq);
-//  Serial.print("temp");
-//  Serial.println(temp,BIN);
-//  Serial.print("freqTW");
-//  Serial.println(freqTW,BIN);
-//  Serial.print("freqMSB");
-//  Serial.println(freqMSB,BIN);
-//  Serial.print("freqLSB");
-//  Serial.println(freqLSB,BIN);      
-//  program()
+
   
   writeReg(0x27,0x0031);  //Sinewave Mode channel 1
-//  writeReg(0x27,0x3131);  //Sinewave Mode, channel 1 and 2
+  // writeReg(0x27,0x3131);  //Sinewave Mode, channel 1 and 2
   writeReg(0x26,0x0031);  //Sinewave Mode channel 3
 //  
   writeReg(0x45,0x0000); //Static phase/freq
@@ -720,19 +731,9 @@ void writeMSG (uint16_t addr,uint16_t dat) {
 }
 
 void writeReg (uint16_t addr,uint16_t dat) {
-  //  Serial.println("Writing register");
   writeMSG(  addr,dat);
   delay(1);
   writeMSG( 0x1D , 0x01 );
-//  delay(2);
-//  uint32_t out=spiCommand( (0x80 << 24) + (addr << 16) + 0x0000 ); // Read register
-//  uint16_t out2=out & ~(~0U << 16); // or out & 0xFFFF
-//  if ( dat != out){
-//      Serial.println("Write command unsuccessful");
-//      Serial.println(dat,BIN);
-//      Serial.println(out,BIN);
-//      Serial.println(out2,BIN);
-//  }
 }
 
 
@@ -836,7 +837,12 @@ void parse( String rxValue){
       Serial.println(B);
       Serial.print("Delta");
       Serial.println(delta);
-		  GainSweep(A,B,delta);
+      if (rxValue.substring(index-1,index)=="2"){
+        GainSweep2(A,B,delta);
+      } else{
+        GainSweep(A,B,delta);
+      }
+		  
     } else {
       sprintf(txString,"Start, Stop and delta can not be parsed form string: '%s''",rxValue);
       Serial.println(txString);
@@ -901,19 +907,22 @@ void parse( String rxValue){
       sprintf(txString,"Gain can not be parsed from string '%s''",rxValue);
       Serial.println(txString);
     }  
-  } else if (rxValue.indexOf("SETGAIN") != -1) {
-    Serial.println("Setting new digital gain value! ");
-    int index = rxValue.indexOf(":");
+  } else if (rxValue.indexOf("SCANI2C") != -1) {
+    Serial.println("Scanning I2C devices");
+    scanI2C ();
+
+  } else if (rxValue.indexOf("SETCLKF") != -1) {
+	  Serial.println("Setting DAC clock freqeuncy value! ");
+    int index = rxValue.indexOf(":");\
     int index2 = rxValue.indexOf(":",index+1);
     if (index !=-1 and index2 !=-1){
-      setGain(rxValue.substring(index+1,index2).toFloat());
-      sprintf(txString,"New gain is:%f, and gain tuning word is: %04X",gain,gainDAT );
+      AWG_clock_freq=rxValue.substring(index+1,index2).toInt();
+      sprintf(txString,"New Clock frequency is: %d",AWG_clock_freq );
       Serial.println(txString);
     } else {
-      sprintf(txString,"Gain can not be parsed from string '%s''",rxValue);
+      sprintf(txString,"Frequency can not be parsed from string '%s''",rxValue);
       Serial.println(txString);
     }
-
     
    // Read SPI register 	
   } else if (rxValue.substring(0,4)== "SPIR"  and rxValue.charAt(8)== 'R') {
@@ -1186,30 +1195,6 @@ void setup(){
     error = Wire.endTransmission();
     Serial.printf("endTransmission on CSwitch CalibCoil: %u\n", error);
 	
-	
-	  // // Set pinMode to OUTPUT
-	  // I2C_cSwitchTx.pinMode(P3, OUTPUT);
-	  // I2C_cSwitchTx.pinMode(P2, OUTPUT);
-	  // I2C_cSwitchTx.pinMode(P4, OUTPUT);
-	  // I2C_cSwitchTx.pinMode(P5, OUTPUT);
-	  // I2C_cSwitchTx.pinMode(P6, OUTPUT);
-	  // I2C_cSwitchTx.pinMode(P7, OUTPUT);
-	  // I2C_Calib.pinMode(P0, OUTPUT);
-	  // I2C_Calib.pinMode(P1, OUTPUT);
-	  // I2C_Calib.pinMode(P2, OUTPUT);
-
-	  // Serial.print("Init cSwitches");
-	  // if (I2C_Calib.begin()){
-		// Serial.println("I2C_Calib is OK");
-	  // }else{
-		// Serial.println("I2C_Calib is KO");
-	  // }
-
-	  // if (I2C_cSwitchTx.begin()){
-		// Serial.println("I2C_SwitchTx is OK");
-	  // }else{
-		// Serial.println("I2C_SwitchTx is KO");
-	  // }
 
 
 	//enable MA12070P to be allow to acces registers

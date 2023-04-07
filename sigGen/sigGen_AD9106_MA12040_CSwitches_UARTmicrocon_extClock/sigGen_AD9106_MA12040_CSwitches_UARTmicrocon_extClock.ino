@@ -109,7 +109,7 @@ uint8_t  CSwitch_code =0xFF;
 // Sinus function variables
 //-=-=-=-=-=-=-=-=-=-=-=-
 uint64_t clock_divider=1;
-uint64_t AWG_clock_freq = 125000000;
+uint64_t AWG_clock_freq = 7372800; // 125000000; 
 
 uint16_t freqAdd;
 // uint64_t freq;
@@ -272,45 +272,6 @@ void testCal(){
    Send_tx_String(txString) ;
 }
 
-
-void testCal2(){
-	delay(500);
-	strcpy(txString,"Starting cal test");
-	Send_tx_String(txString) ;
-	startMicro();   // start recording of ADC data for given duration in seconds
-  digitalWrite(PIN_MUTE , LOW);  // mute
-  delay(1000);
-  digitalWrite(PIN_MUTE , HIGH);  // unmute
-  delay(1000);
-  digitalWrite(PIN_MUTE , LOW);  // mute
-  setCswitchCal("0x00");
-  
-	for (int i=0; i<Nfreq; ++i) {
-		freq=freqs[i];
-		configureSineWave();
-		delay(10);
-		digitalWrite(PIN_MUTE , HIGH);  // unmute
-    run2();
-    trigger();
-    delay(500);
-		for (int j=0; j<4; ++j) {
-			setCswitchCal(CAL_states[j]);
-      delay(500);
-      setCswitchCal("0x00");
-      delay(100);
-		}
-   stop_trigger();
-   digitalWrite(PIN_MUTE , LOW);  // mute
-	 delay(200);
-   }
-   delay(500);
-   stopMicro();
-   delay(200);
-   strcpy(txString,"End of test");
-   Send_tx_String(txString) ;
-}
-
-
 void frequencySweep(int start,int stp,int Delta){
 	  int A=start/Delta;
 	  int B=stp/Delta;
@@ -423,8 +384,6 @@ void FsubSweep(int Df,int Delta){
 	    int B=stop/Delta;
       Serial.print("Main freq:");
       Serial.println(mainfreq);
-      setCswitchTx(CSw_states[j]);
-      delay(50);
     
       for (int i=A; i<B+1; ++i) {
         freq=i*Delta;
@@ -435,7 +394,7 @@ void FsubSweep(int Df,int Delta){
         digitalWrite(PIN_MUTE , HIGH);  // unmute
         run2();
         trigger();
-        delay(300);
+        delay(500);
         stop_trigger();
         digitalWrite(PIN_MUTE , LOW);  // mute
         delay(50);
@@ -916,7 +875,7 @@ void parse( String rxValue){
 
     
    // Read SPI register 	
-  } else if (rxValue.substring(0,4)== "SPIR"  and rxValue.charAt(8)== 'R') {
+  } else if (rxValue.substring(0,4)== "SPIR"  and rxValue.charAt(5)== 'R') {
 
 	  rxValue.substring(4,8).toCharArray(addrStr,8);
 	  addr=strtoul (addrStr, NULL, 16);

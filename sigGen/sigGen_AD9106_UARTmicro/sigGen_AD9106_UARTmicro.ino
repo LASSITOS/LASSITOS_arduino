@@ -192,9 +192,10 @@ void configureSineWave(){
 //  Serial.println(freqLSB,BIN);      
 //  program()
   
-  writeReg(0x27,0x0031);  //Sinewave Mode channel 1
-//  writeReg(0x27,0x3131);  //Sinewave Mode, channel 1 and 2
-  writeReg(0x26,0x0031);  //Sinewave Mode channel 3
+  // writeReg(0x27,0x0031);  //Sinewave Mode channel 1
+  writeReg(0x27,0x3131);  //Sinewave Mode, channel 1 and 2
+  // writeReg(0x26,0x0031);  //Sinewave Mode channel 3
+  writeReg(0x26,0x3131);  //Sinewave Mode channel 3
 //  
   writeReg(0x45,0x0000); //Static phase/freq
   writeReg(0x3E,freqMSB); //Freq MSB
@@ -204,6 +205,8 @@ void configureSineWave(){
   writeReg(0x35,gainDAT); //digital gain Ch1
   writeReg(0x34,gainDAT); //digital gain Ch2
   writeReg(0x33,gainDAT); //digital gain Ch3
+    writeReg(0x32,gainDAT); //digital gain Ch4
+
 }
 
 void run(){
@@ -240,6 +243,7 @@ void setGain2(int value){
   gainDAT=value;
   writeReg(0x35,gainDAT); //digital gain ch1
   writeReg(0x34,gainDAT); //digital gain Ch2
+  writeReg(0x33,gainDAT); //digital gain Ch3
   writeReg(0x33,gainDAT); //digital gain Ch3
 }
 
