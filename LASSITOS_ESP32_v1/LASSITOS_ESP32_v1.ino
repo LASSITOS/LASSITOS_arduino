@@ -1,27 +1,11 @@
 /*
-  Getting data from u-blox GNSS module and from LDS70A Laser altimeter and saving them to SD card.
+  Code for controlling the LASSITOS sea ice EM esp32 microprocessor.
   By: AcCapelli
-  Date: February 25th, 2022
+  Date: April 7th, 2023
   License: MIT. See license file for more information but you can
   basically do whatever you want with this code.
 
-  Based on Examples from used libraries and hardware.
-
-  Hardware Connections:
-  
-  Plug a Qwiic cable into the GNSS and a BlackBoard
-  Open the serial monitor at 115200 baud to see the output
-  
-  Using Hardwareserial for altimeter. Connect pins  16 to R1_out and 17 to T1_in of ADM3222 (transreceiver TTL to RS232)
-
-  Connect the SD card to the following pins (using V_SPI):
-   * SD Card | ESP32
-   *    CS       CS0   GPIO5
-   *    CMD      MOSI  GPIO32  ! GPIO 23 is used by I2C port to GNSS! Use other PIN
-   *    VDD      3.3V
-   *    CLK      SCK   GPIO18
-   *    GND      GND
-   *    D0       MISO  GPIO19
+  Based on Examples from multiple libraries and hardware.
   
   BLE:
   Set up BLE connections with UART communication
@@ -59,13 +43,12 @@ long logTime_IMX5;
 #define SCK 18
 #define MISO 19
 #define MOSI 23
-#define SPI_rate 80000000  // 10000000   %toCheck
-#define CS_Sd 5   // cip select  SD card
+#define SPI_rate 1000000  // DAC up to 80 MHz  %toCheck
+#define SPI_rate_SD 80000000  
+#define CS_SD 5   // cip select  SD card
 #define CS_DAC  14
+#define CS_MSP430  15  // Chip select MSP430
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-
-#define CD_pin 36  // chip detect pin is shorted to GND if a card is inserted. (Otherwise pulled up by 10kOhm)
-#define triggerDAC 32     
 
 SPIClass spi = SPIClass(VSPI);
 
@@ -75,6 +58,15 @@ uint16_t dat;
 char datStr[19];
 uint32_t msg;
 uint16_t out;
+
+
+Other PINs
+//-=-=-=-=-=-=-=-=-=-=-=-=-=
+#define CD_pin 36  // chip detect pin is shorted to GND if a card is inserted. (Otherwise pulled up by 10kOhm)
+#define triggerDAC 32     
+#define PIN_VBat 34    
+
+float Vbat=0;
 
 
 // settings SD card
@@ -101,7 +93,7 @@ char dataFileName[24];  //Max file name length is 23 characters)
 File dataFile;          //File where data is written to
 
 
-bool logging = false;
+bool measuring = false;
 unsigned long lastPrint;  // Record when the last Serial print took place
 
 
@@ -173,47 +165,19 @@ char txString[500];  // String containing messages to be send to BLE terminal
 char txString2[50];
 char subString[32];
 bool BLE_message = false;
-bool BLE_stop = false;   // Stop datalogger over BLE
-bool BLE_start = false;  // Start datalogger over BLE
+
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
 #define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"  // UART service UUID
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
-#define BLEname "GNSS BLE UART"
-
-
-
-void LED_blink(int len, int times) {  // Used for blinking LED  times at interval len in milliseconds
-  int a;
-  for (a = 0; a < times; a = a + 1) {
-    digitalWrite(statLED, HIGH);
-    delay(len);
-    digitalWrite(statLED, LOW);
-    if (times > 1) delay(len);  // Wait after blinking next time
-  }
-}
-
-
-// Send txSTring to BLE and Serial
-void Send_tx_String(char *txString) {
-  // strcat(txString,"\n");
-  Serial.print(txString);
-
-  if (deviceConnected) {
-    pTxCharacteristic->setValue(txString);
-    pTxCharacteristic->notify();
-    BLE_message = false;
-  }
-
-  strcpy(txString, "");
-}
+#define BLEname "LASSITOS BLE"
 
 
 
 //-=-=-=-=-=-=-=-=-=-=-=-
-// Function generation
+// Function generation settings
 //-=-=-=-=-=-=-=-=-=-=-=-
 uint64_t clock_divider=1;
 uint64_t AWG_clock_freq =125000000; // 7372800; // 125000000; 
@@ -242,16 +206,21 @@ int Nfreq=4;  //Number of frequencies to use
 #define stateF5 0x10
 #define stateF6 0x08
 uint8_t CSw_states[] ={stateF1,stateF2,stateF3,stateF4};
+uint8_t CSw_state=stateF3;
 
 #define CALF1 1055
 #define CALF2 4744
 #define CALF3 8805
 int CAL_states[]={0,1,2,4};
+int CAL_state=0;
 
 #define MAXGAIN 0x3000
 
 
 //-=-=-=-=-=-=-=-=-=-=-=-
+
+
+
 
 
 // /////////////////////////////////////////////
@@ -260,7 +229,16 @@ int CAL_states[]={0,1,2,4};
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
-// to be done SPI
+// to be done over SPI
+void startMicro(){
+      strcpy(txString,"Mock start of Microcontroller!/n");
+      Send_tx_String(txString);
+}
+
+void stopMicro(){ 
+      strcpy(txString,"Mock stop of Microcontroller!/n");
+      Send_tx_String(txString);
+}
 
 
 // /////////////////////////////////////////////
@@ -384,10 +362,7 @@ void GainSweep(int start,int stp,int Delta){
     
 	  int A=start/Delta;
 	  int B=stp/Delta;
-    // Serial.print("A");
-    // Serial.println(A);
-    // Serial.print("B");
-    // Serial.println(B);
+
 	  
 	  delay(500);
 	  strcpy(txString,"Starting gain sweep");
@@ -402,15 +377,6 @@ void GainSweep(int start,int stp,int Delta){
 		  // sprintf(subString,"f: %d",freq );
       // strcat(txString,subString);
       setCswitchTx(CSw_states[j]);
-      // if(j==0){ 
-      //   digitalWrite(PIN_GPIOswitch , HIGH);
-      //   delay(10);
-      // }else{
-      //   digitalWrite(PIN_GPIOswitch , LOW);
-      //   delay(10);
-      // }
-
-      
 		  for (int i=A; i<B; ++i) {
 			  // Play the note for a quarter of a second.
 			  setGain2(i*Delta);
@@ -516,6 +482,8 @@ void FsubSweep(int Df,int Delta){
 }
 
 
+
+
 // /////////////////////////////////////////////
 // ---------------------------------------------
 // SignalGen functions
@@ -562,21 +530,21 @@ void run2(){
 }
 
 void program(){
-  digitalWrite(triggerGPIO,HIGH);
+  digitalWrite(triggerDAC,HIGH);
   writeReg(0x1E,0x0000);
 }
 void trigger(){
   // Serial.println("[AWG] Triggerring");
-  digitalWrite(triggerGPIO,HIGH);
+  digitalWrite(triggerDAC,HIGH);
   delay(1);
-  digitalWrite(triggerGPIO,LOW);
+  digitalWrite(triggerDAC,LOW);
 }
 
 void stop_trigger(){
   // Serial.println("Stop triggerring");
-  digitalWrite(triggerGPIO,LOW);
+  digitalWrite(triggerDAC,LOW);
   delay(1);
-  digitalWrite(triggerGPIO,HIGH);
+  digitalWrite(triggerDAC,HIGH);
   writeReg(0x1E,0x0000);
 }
 
@@ -588,6 +556,19 @@ void setGain2(int value){
   writeReg(0x33,gainDAT); //digital gain Ch3
 }
 
+// /////////////////////////////////////////////
+// --------------------------------
+// other functions
+//---------------------------------
+// /////////////////////////////////////////////
+
+
+float readVBat(){
+	int Vbat_int= analogRead(PIN_VBat);
+	Vbat =Vbat_int/4095*3.2*10;
+	// Serial.printf("Voltage battery: %05.2f V\n", Vbat)
+	return Vbat;
+}
 
 
 
@@ -689,7 +670,7 @@ void scanI2C (){
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
-uint32_t spiCommand( uint32_t msg ) {  //use it as you would the regular arduino SPI API
+uint32_t spiCommand( uint32_t msg , int CS ) {  //use it as you would the regular arduino SPI API
   spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
   digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
   uint32_t out= spi.transfer32(msg);
@@ -699,9 +680,9 @@ uint32_t spiCommand( uint32_t msg ) {  //use it as you would the regular arduino
   return out;
 }
 
-void writeMSG (uint16_t addr,uint16_t dat) {
+void writeMSG (uint16_t addr,uint16_t dat ) {
   uint32_t msg = (0x00 << 24) + (addr << 16) + dat;
-  spiCommand(  msg );
+  spiCommand(  msg ,CS_DAC);
 }
 
 void writeReg (uint16_t addr,uint16_t dat) {
@@ -714,21 +695,9 @@ void writeReg (uint16_t addr,uint16_t dat) {
 uint32_t readReg(uint16_t addr){
 //   Serial.println("Reading register");
    uint32_t msg = (0x80 << 24) + (addr << 16) + 0x0000;
-   uint16_t out=spiCommand(  msg );
+   uint16_t out=spiCommand(  msg ,CS_DAC);
    return out;
 }
-
-
-void LED_blink(int len, int times ) { // Used for blinking LED  times at interval len in milliseconds
-  int a;
-  for( a = 0; a < times; a = a + 1 ){
-      digitalWrite(statLED, HIGH);
-      delay(len);
-      digitalWrite(statLED, LOW);
-      if  (times > 1) delay(len); // Wait after blinking next time
-   }   
-}
-
 
 
 
@@ -1119,7 +1088,6 @@ void makeFiles(fs::FS &fs) {
   strcat(txString, "Created file: ");
   strcat(txString, dataFileName);
   Send_tx_String(txString);
-  LED_blink(100, 10);
 }
 
 
@@ -1168,7 +1136,16 @@ void writeToBuffer(uint8_t *tempBuf, int &bitesToWrite) {
   // Serial.println((myBufferSize + BufferTail - BufferHead) % myBufferSize);
 }
 
-void startLogging() {
+
+
+
+
+
+
+
+
+
+void startMeasuring() {
   BLE_message = true;
 
   makeFiles(SD);
@@ -1191,7 +1168,21 @@ void startLogging() {
   RS232.write("DT");
   RS232.write(0x0D);
   delay(200);
-
+	
+	
+  // Start DAC
+  //-----------
+  configureSineWave();
+  setCswitchTx(CSw_state);
+  delay(10);
+  setCswitchCal(0);
+  delay(10);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  run2();
+  trigger();
+	
+	
+	
   while (RS232.read() >= 0)
     ;  // flush the receive buffer.
   // while (IMX5.read() >= 0)
@@ -1205,18 +1196,18 @@ void startLogging() {
   IMX5.write(asciiMessageformatted);  //send instruction for sending ASCII messages
 
 
-  strcpy(txString, "Starting logging data!");
+  strcpy(txString, "Starting measuring!");
   Serial.println(txString);
 }
 
 
 
 
-// Stop data logging process
-void stop_logging(fs::FS &fs) {
-  logging = false;  // Set flag to false
+// Stop data measuring process
+void stop_Measuring(fs::FS &fs) {
+  measuring = false;  // Set flag to false
   BLE_message = true;
-  Serial.println("Turning datalogging OFF!");
+  Serial.println("Turning dataMeasuring OFF!");
 
   //  Empty data buffer
   // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -1269,7 +1260,7 @@ void stop_logging(fs::FS &fs) {
   strcat(txString, filesstring);
   Serial.print("Closing file:");
   Serial.println(filesstring);
-  LED_blink(25, 4);
+  delay(25);
   Write_stop();
   dataFile.close();  // Close the data file
   Serial.println("Datafile closed.");                                                                                   
@@ -1287,10 +1278,17 @@ void parse( String rxValue){     //%toCheck
   //Start new data files if START is received and stop current data files if STOP is received
   BLE_message = true;
   if (rxValue.indexOf("START") != -1) {
-	restart_logging();
+	  if (measuring) {
+    strcpy(txString, "Already measuring.");
+    Serial.println(txString);
+    return;
+  }
+  measuring = true;
+  startMeasuring();
+  
   } else if (rxValue.indexOf("STOP") != -1) {
-	logging = false;
-	stop_logging(SD);
+	measuring = false;
+	stop_Measuring(SD);
   } else if (rxValue.indexOf("READ") != -1) {
 	readFiles(rxValue);
   } else if (rxValue.indexOf("LIST") != -1) {
@@ -1306,21 +1304,57 @@ void parse( String rxValue){     //%toCheck
     int index = rxValue.indexOf(":");\
     int index2 = rxValue.indexOf(":",index+1);
     if (index !=-1 and index2 !=-1){
-		if (!logging) {
+		if (!measuring) {
 		  IMX5freq=rxValue.substring(index+1,index2).toInt();
 		  sprintf(txString,"New frequency is: %d ms",IMX5freq );
 		  Serial.println(txString);
 		  setIMX5message(); //update ASCII setting message
 		  setupINS(); //send setting message to IMX5
 		  } else {
-			Serial.println("Datalogging running. Can't read file list now. First stop measurment!");
+			Serial.println("DataMeasuring running. Can't read file list now. First stop measurment!");
 		}
     } else {
       sprintf(txString,"INS requency (ms) can not be parsed from string '%s''",rxValue);
       Serial.println(txString);
     }
-  
-  
+  } else if (rxValue.indexOf("SETFREQ") != -1) {
+	  Serial.println("Setting new frequency value! ");
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+      freq=rxValue.substring(index+1,index2).toInt();
+      configureSineWave();
+      sprintf(txString,"New frequency is: %d",freq );
+      Serial.println(txString);
+    } else {
+      sprintf(txString,"Frequency can not be parsed from string '%s''",rxValue);
+      Serial.println(txString);
+    }
+  } else if (rxValue.indexOf("SETGAIN2") != -1) {
+    Serial.println("Setting new digital gain value! ");
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+      rxValue.substring(index+1,index2).toCharArray(datStr ,index2-index+1);
+      setGain2(strtoul (datStr, NULL, 16));
+      Serial.println(datStr);
+      sprintf(txString,"New gain tuning word is: %04X",gainDAT );
+      Serial.println(txString);
+    } else {
+      sprintf(txString,"Gain can not be parsed from string '%s''",rxValue);
+      Serial.println(txString);
+    }  
+	
+  } else if (rxValue.indexOf("SCANI2C") != -1) {
+    Serial.println("Scanning I2C devices");
+    scanI2C ();
+	
+  } else if (rxValue.indexOf("VBAT") != -1) {
+    BLE_message = true;
+	readVBat();
+	sprintf(txString,"Voltage battery: %02.1f V\n", Vbat)
+	Serial.println(txString);
+	
   } else {
 	BLE_message = true;
 	strcpy(txString, "Input can not be parsed retry!");
@@ -1329,46 +1363,7 @@ void parse( String rxValue){     //%toCheck
 }
 
 
-
-// Restart data logging process
-void restart_logging() {
-  if (logging) {
-    strcpy(txString, "Already logging.");
-    Serial.println(txString);
-    return;
-  }
-
-  LED_blink(100, 5);
-  logging = true;
-  startLogging();
-}
-
-
-// change bool setting
-void setLogFlag(String rxValue, bool &flag, String flagname) {
-  if (!logging) {
-    int index = rxValue.indexOf(":");
-    int index2 = rxValue.indexOf(":", index + 1);
-    if (index != -1 and index2 != -1) {
-      flag = (rxValue.substring(index + 1, index2).toInt() > 0);
-      BLE_message = true;
-      sprintf(txString, "New %s log setting is: %d", flagname, flag);
-      Serial.println(txString);
-
-    } else {
-      BLE_message = true;
-      sprintf(txString, "%s log setting can not be parsed from string '%s'. Valid format is 'FLAGNAME:0:'", flagname, rxValue);
-      Serial.println(txString);
-    }
-  } else {
-    BLE_message = true;
-    strcpy(txString, "Datalogging running. Can't change flag log setting now. First stop measurment!");
-    Serial.println(txString);
-  }
-  Send_tx_String(txString);
-}
-
-
+	
 
 
 
@@ -1376,7 +1371,7 @@ void readFiles(String rxValue) {
   /*
     Read last files (haderfile and datafile) if no argument is passed  ("READ" ) otherwise read passed files (READ:<<filepath>>:).
     */
-  if (!logging) {
+  if (!measuring) {
     //    Serial.println(rxValue);
     int index = rxValue.indexOf(":");
     int index2 = rxValue.indexOf(":", index + 1);
@@ -1404,7 +1399,7 @@ void readFiles(String rxValue) {
     }
   } else {
     BLE_message = true;
-    strcpy(txString, "Datalogging running. Can't read files now. First stop measurment!");
+    strcpy(txString, "Data Measuring running. Can't read files now. First stop measurment!");
     Serial.println(txString);
   }
   Send_tx_String(txString);
@@ -1414,14 +1409,14 @@ void getFileList() {
   /*
     Return list of files in SD card
     */
-  if (!logging) {
+  if (!measuring) {
     Serial.println("");
     Serial.println("%% File list:");
     listDir(SD, "/", 0);
     Serial.println("%% end");
 
   } else {
-    Serial.println("Datalogging running. Can't read file list now. First stop measurment!");
+    Serial.println("Data Measuring running. Can't read file list now. First stop measurment!");
   }
 }
 
@@ -1432,7 +1427,7 @@ void getFileList() {
 void check_laser() {
   Send_tx_String(txString);
   strcpy(txString, "");
-  if (!logging) {
+  if (!measuring) {
     strcat(txString, "\nLaser data \n# --------------------------------------\n");
     Send_tx_String(txString);
 	strcpy(txString, "");
@@ -1467,7 +1462,7 @@ void check_laser() {
 void check_INS() {
   Send_tx_String(txString);
   strcpy(txString, "");
-  if (!logging) {
+  if (!measuring) {
     strcat(txString, "\nIMX5 data \n# --------------------------------------\n");
     Send_tx_String(txString);
 	strcpy(txString, "");
@@ -1499,7 +1494,7 @@ void check_INS() {
 }
 
 
-// Print commands
+// Print commands  %toCheck:  Need to make new list of commands
 void commands() {
   Send_tx_String(txString);
   strcpy(txString, "");
@@ -1595,6 +1590,19 @@ void setup_BLE() {
   Serial.println("Waiting a client connection to notify...");
 }
 
+// Send txSTring to BLE and Serial
+void Send_tx_String(char *txString) {
+  // strcat(txString,"\n");
+  Serial.print(txString);
+
+  if (deviceConnected) {
+    pTxCharacteristic->setValue(txString);
+    pTxCharacteristic->notify();
+    BLE_message = false;
+  }
+
+  strcpy(txString, "");
+}
 
 
 
@@ -1611,8 +1619,7 @@ void setup() {
 	digitalWrite(PIN_EN , HIGH);   // must be =1 at startup
 	pinMode(PIN_MUTE , OUTPUT); 
 	digitalWrite(PIN_MUTE , LOW);  // must be =0 at startup
-	pinMode(PIN_GPIOswitch , OUTPUT); 
-	digitalWrite(PIN_GPIOswitch , LOW);  // switch off at startup
+	
 
 	// Initialize the I2C transmitter.	
 	Wire.begin();	
@@ -1645,9 +1652,9 @@ void setup() {
   //    delay(100);
 
 
-  // Setup INS connection
+  // Setup IMX5 connection
   //--------------------
-  Serial.println("Connecting to INS");
+  Serial.println("Connecting to IMX5");
   IMX5.begin(baudrateIMX5, SERIAL_8N1, IMX5_Rx, IMX5_Tx);  // Use this for HardwareSerial
   IMX5.setRxBufferSize(IMX5_BufferSize);
   Serial.println("Started serial to IMX5");
@@ -1660,24 +1667,17 @@ void setup() {
   setup_BLE();
 
 
+  // Setup SPI connection
+  //--------------------
+  spi.begin(SCK, MISO, MOSI, CS_SD);  
+  
+  
+  
+  
   // Setup SD connection
   //--------------------
-  Serial.print("CD pin value:");
-  Serial.println(digitalRead(CD_pin));
-  if (!digitalRead(CD_pin)) {
-    Serial.println("No SD card inserted. Waiting for it.");
-    while (1) {
-      LED_blink(200, 3);
-      delay(2000);
-      if (digitalRead(CD_pin)) {
-        Serial.println(F("SD card inset=rted continuing."));
-        break;
-      }
-    }
-  }
-
-spi.begin(SCK, MISO, MOSI, CS);  //%toCheck  SPI could be a huge mess!!!!
-  if (!SD.begin(CS, spi, SPI_rate)) {
+  
+  if (!SD.begin(CS_SD, spi, SPI_rate_SD)) {
     Serial.println("Card Mount Failed");
     while (1)
       ;
@@ -1702,15 +1702,11 @@ spi.begin(SCK, MISO, MOSI, CS);  //%toCheck  SPI could be a huge mess!!!!
   Serial.printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
   Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
 
-  Serial.println(F("Setup completeded."));
 
-  if (logging) {
-    startLogging();
-  } else {
-    BLE_message = true;
-    strcpy(txString, "Waiting for command 'START' over Serial of BLE for starting logging data!");
-    Send_tx_String(txString);
-  }
+  BLE_message = true;
+  strcpy(txString, "Setup completeded. Waiting for command 'START' over Serial of BLE for starting measuring data!");
+  Send_tx_String(txString);
+
 }
 
 
@@ -1718,7 +1714,7 @@ void loop() {
 
   //################################# Data logging #############################################
 
-  if (logging) {  // if logging is active check for INS and Laser data and save them to SD card
+  if (measuring) {  // if measuring is active check for INS and Laser data and save them to SD card
 
     //  INS data
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -1739,17 +1735,7 @@ void loop() {
         }
         IMX5.readBytes(tempBuffer, bitesToWrite);
         writeToBuffer(tempBuffer, bitesToWrite);
-        // Serial.print('#');
       }
-
-      // Serial.print("Dump IMX5 data to buffer:");
-      // Serial.println(bitesToWrite);
-      // Serial.write(tempBuffer, bitesToWrite);     
-      // Serial.print("I");
-      // Serial.print(bitesToWrite);
-      // Serial.print("t");
-      // Serial.print(logTime_IMX5);
-      
       delay(1);
     }
 
@@ -1762,19 +1748,9 @@ void loop() {
       if (tempBufferSize < bitesToWrite) {
         bitesToWrite = tempBufferSize;
       }
-
       RS232.readBytes(tempBuffer, bitesToWrite);
       writeToBuffer(tempBuffer, bitesToWrite);
       logTime_laser = millis();
-      
-      // Serial.print("Dump Laser data to buffer:");
-      // Serial.println(bitesToWrite);
-      // Serial.print("L");
-      // Serial.print(bitesToWrite);
-      // Serial.print("t");
-      // Serial.print(logTime_laser);
-      // Serial.write(tempBuffer, bitesToWrite);
-      
       delay(1);
     }
 
@@ -1783,14 +1759,8 @@ void loop() {
     //  Write data to SD
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if (((myBufferSize + BufferTail - BufferHead) % myBufferSize) > sdWriteSize) {
-      // Serial.println(" ");
-      // Serial.print("Total bytes in buffer:");
-      // Serial.print((myBufferSize + BufferTail - BufferHead) % myBufferSize);
-      // Serial.print(", buffer tail:");
-      // Serial.print(BufferTail);
-      // Serial.print(", buffer head:");
-      // Serial.print(BufferHead);
       lastTime = millis();
+	  
       // write data to buffer
       if ((BufferHead + sdWriteSize) < myBufferSize) {  // case head + sdWritesize smaller than buffer size
         for (int i = 0; i < sdWriteSize; i++) {
@@ -1810,12 +1780,6 @@ void loop() {
         }
       }
       lastTime2 = millis();
-      // Write position of bufferHead and marker at end of buffer. Used for debugging!
-      // tempBuffer[sdWriteSize-5]=BufferHead/1000+'0';
-      // tempBuffer[sdWriteSize-4]=BufferHead/100%10+'0';
-      // tempBuffer[sdWriteSize-3]=BufferHead/10%10+'0';
-      // tempBuffer[sdWriteSize-2]=BufferHead%10+'0';
-      // tempBuffer[sdWriteSize-1]='%';
 
 
       dataFile.write(tempBuffer, sdWriteSize);
@@ -1826,36 +1790,12 @@ void loop() {
       // Serial.print(lastTime2-lastTime);
       Serial.print(" , in time (ms):");
       Serial.println(lastTime3-lastTime);
-      // Serial.write( tempBuffer, sdWriteSize);
       delay(1);
     }
 
 
     //==========================================================
 
-
-    // Send strobe pulse every "strobe_intervall"
-    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if (lastTime_STROBE + flushSD_STROBE < millis()) {
-      pulseStrobeIMX5();
-      Serial.println("STROBE");
-      lastTime_STROBE = millis(); 
-    }
-   
-
-    // // // check data in buffer once per 10 seconds
-    // // // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    // if (millis() > (lastPrint + 10000)) {  //
-    //   Serial.print("Data in Buffer:");
-    //   Serial.println((myBufferSize + BufferTail - BufferHead) % myBufferSize);
-    //   Serial.print("Data in IMX5:");
-    //   Serial.println(IMX5.available());
-    //   Serial.print("Data in Laser:");
-    //   Serial.println(RS232.available());
-    //   BLE_message = true;
-    //   strcpy(txString, ":");
-    //   lastPrint = millis();  // Update lastPrint
-    // }
 
     // flush Laser buffer if stuck
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -1881,10 +1821,18 @@ void loop() {
       Serial.println("flushed");
     }
 
-
-
+    // Read battery voltage
+    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
+	if (lastTime_VBat + VBat_intervall < millis()) {
+	readVBat();
+	lastTime_VBat = millis();
+	sprintf(subString,"#VBAT %05.2f\n",VBat );
+	writeToBuffer(subString, 12);
+	}
+	
+	
   } else {
-    delay(50);  // wait 50 ms if not logging
+    delay(50);  // wait 50 ms if not measuring
   }
 
 
@@ -1912,14 +1860,6 @@ void loop() {
     oldDeviceConnected = deviceConnected;
   }
 
-
-  if (BLE_stop) {
-    stop_logging(SD);
-    BLE_stop = false;
-  } else if (BLE_start) {
-    restart_logging();
-    BLE_start = false;
-  }
 
 
   if (Serial.available()) {  // Check Serial inputs
