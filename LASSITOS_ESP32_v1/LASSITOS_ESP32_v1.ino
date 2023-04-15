@@ -24,7 +24,7 @@ HardwareSerial RS232(2);
 HardwareSerial IMX5(1);
 // HardwareSerial Serial(0);
 
-#define version "IMX5+Laser v1.0"
+#define Version "LASSITOS EM sounder ESP32 v1.0"
 
 long lastTime = 0;  //Simple local timer
 long lastTime1 = 0;  //Simple local timer
@@ -34,8 +34,8 @@ long lastTime_STROBE =0;
 long lastTime_flushSD = 0;
 long logTime_laser;
 long logTime_IMX5;
-
-
+long lastTime_VBat; 
+long lastTime_Temp; 
 
 
 // settings PIN SPI 
@@ -43,10 +43,10 @@ long logTime_IMX5;
 #define SCK 18
 #define MISO 19
 #define MOSI 23
-#define SPI_rate 1000000  // DAC up to 80 MHz  %toCheck
-#define SPI_rate_SD 80000000  
+#define SPI_rate    10000000  // DAC up to 80 MHz  %toCheck
+#define SPI_rate_SD 40000000  
 #define CS_SD 5   // cip select  SD card
-#define CS_DAC  14
+#define CS_DAC 14
 #define CS_MSP430  15  // Chip select MSP430
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
@@ -60,21 +60,21 @@ uint32_t msg;
 uint16_t out;
 
 
-Other PINs
+//Other PINs
 //-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define CD_pin 36  // chip detect pin is shorted to GND if a card is inserted. (Otherwise pulled up by 10kOhm)
 #define triggerDAC 32     
 #define PIN_VBat 34    
 
-float Vbat=0;
-
+float VBat=0;
+long VBat_intervall = 10000;
 
 // settings SD card
 //------------------
 
 #define sdWriteSize 16384     // Write data to the SD card in blocks of 512 bytes
 #define WriteSize_Laser 23  // Write data to buffer in blocks (should be shorter than expected message)
-#define WriteSize_IMX5 126  // Write data to buffer in blocks (should be shorter than expected message)
+#define WriteSize_IMX5 30  // Write data to buffer in blocks (should be shorter than expected message)
 #define myBufferSize 49152
 #define tempBufferSize 16384      // must be bigger than sdWriteSize,WriteSize_Laser and WriteSize_IMX5
 #define LaserBufferSize 2048 
@@ -101,8 +101,8 @@ unsigned long lastPrint;  // Record when the last Serial print took place
 // settings altimeter LSD70A
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 //PINs can be changed to any pin. // For Hardware Serial use Pin 16 an 17. SoftwareSerial worked on pins 12 and 27
-int PIN_Rx = 16;  // 16 = Hardware RX pin,
-int PIN_Tx = 17;  // 17 = Hardware TX pin,
+int PIN_Rx = 17;  // 16 = Hardware RX pin,
+int PIN_Tx = 16;  // 17 = Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define baudrateRS232  230400  //115200
 #define Laser_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
@@ -114,17 +114,17 @@ int PIN_Tx = 17;  // 17 = Hardware TX pin,
 //PINs can be changed to any pin. // For Hardware Serial use Pin 16 an 17. SoftwareSerial worked on pins 12 and 27
 int  IMX5_Rx = 26;  //  Hardware RX pin, to PIN10 on IMX5
 int  IMX5_Tx =25;  //  Hardware TX pin, to PIN8 on IMX5
-int  PIN_PPS =36;  //  GPIO for PPS, to  PIN5 on IMX5
-int  IMX5_strobe = 4; //  GPIO for STROBE input (first), to  PIN2 on IMX5
+int  IMX5_strobe = 4; //  GPIO for STROBE input (first), to  PIN2 on IMX5 !!!!!!!!Reserved for radio but can be used meanwhile!!!!!!!!
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define baudrateIMX5 230400  //115200
 #define IMX5_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
 #define IMX5_log_intervall 2000
-#define flushSD_STROBE  5000
-char asciiMessage[] = "$ASCB,512,,,100,,,,30000,,30000,,,";  // // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
-
+#define STROBE_intervall 5000
+// char asciiMessage[] = "$ASCB,512,,,200,,,,30000,,30000,,,";  // // Get PINS1 @ 100ms, 30s  on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+char asciiMessage[] = "$ASCB,512,,,6,,,,2000,,2000,,,";     // new IMX5 has different IMU data rate  (16 ms). I dont know why!! But it is ok.
 char asciiMessageformatted[128];
-int IMX5freq=100;
+int IMXrate=100;
+int IMUdataRate=16;
 
 long Year;
 long Month;
@@ -138,9 +138,24 @@ long Second;
 // Settings I2C, Amp. Cswitches, Temp.
 //---------------------------------
 #include <Wire.h>
+#include "Adafruit_MCP9808.h"
+
+Adafruit_MCP9808 tempsens1 = Adafruit_MCP9808();
+Adafruit_MCP9808 tempsens2 = Adafruit_MCP9808();
+Adafruit_MCP9808 sensor = Adafruit_MCP9808();
+
+// I2C addresses
 #define  MA12070P_address 0x20
 #define  CSwitchTx_address 0x24
 #define  CSwitchCal_address 0x26
+#define  Temp1_address 0x18
+#define  Temp2_address 0x19
+
+#define N_TempSens 2
+int TempSens_addr[] ={Temp1_address,Temp2_address};
+long Temp_intervall = 10000;  // logging rate for temperature in ms
+
+
 uint8_t CSwitch =0 ;  // Controlling witch switch is open. 0 all a close.  1 for first, 2 for second,   4  for third. Sum for combinations. 
 uint8_t  CSwitch_code =0xFF;
 
@@ -186,7 +201,7 @@ uint16_t freqDat;
 float gain=0;
 uint16_t gainDAT = 0x1000;
 
-
+bool ADCstarted=0;  //flag checking if ADC responded to start command
 
 //resonant frequencies:
 #define F1 1061
@@ -195,8 +210,9 @@ uint16_t gainDAT = 0x1000;
 #define F4 8651
 
 uint64_t freqs[] ={F1,F2,F3,F4};
-uint64_t freq=F3;
 int Nfreq=4;  //Number of frequencies to use
+int ifreq =2;
+uint64_t freq=freqs[ifreq];
 
 // states of CSwitch for each frequencz
 #define stateF1 0x80
@@ -206,7 +222,7 @@ int Nfreq=4;  //Number of frequencies to use
 #define stateF5 0x10
 #define stateF6 0x08
 uint8_t CSw_states[] ={stateF1,stateF2,stateF3,stateF4};
-uint8_t CSw_state=stateF3;
+uint8_t CSw_state=CSw_states[ifreq];
 
 #define CALF1 1055
 #define CALF2 4744
@@ -241,245 +257,15 @@ void stopMicro(){
 }
 
 
+
+
 // /////////////////////////////////////////////
 // ---------------------------------------------
 // Signal generation: running and test functions
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
-void testLong(){
-	delay(500);
-	strcpy(txString,"Starting long test");
-	Send_tx_String(txString) ;
-	startMicro();   // start recording of ADC data for given duration in seconds
-  digitalWrite(PIN_MUTE , LOW);  // mute
-  delay(5000);
-  digitalWrite(PIN_MUTE , HIGH);  // unmute
-  delay(1000);
-  digitalWrite(PIN_MUTE , LOW);  // mute
-  
-	for (int i=0; i<Nfreq; ++i) {
-		freq=freqs[i];
-		configureSineWave();
-    setCswitchTx(CSw_states[i]);
-    delay(10);
-    digitalWrite(PIN_MUTE , HIGH);  // unmute
-    run2();
-    trigger();
-    delay(5000);
-    // Pause for a tenth of a second between notes.
-    stop_trigger();
-    digitalWrite(PIN_MUTE , LOW);  // mute
-    delay(200);
-		}
-   
-   delay(1000);
-   stopMicro();
-   delay(200);
-   strcpy(txString,"End of test");
-   Send_tx_String(txString) ;
-}
 
-void testCal(){
-	delay(500);
-	strcpy(txString,"Starting cal test");
-	Send_tx_String(txString) ;
-	startMicro();   // start recording of ADC data for given duration in seconds
-  digitalWrite(PIN_MUTE , LOW);  // mute
-  delay(1000);
-  digitalWrite(PIN_MUTE , HIGH);  // unmute
-  delay(1000);
-  digitalWrite(PIN_MUTE , LOW);  // mute
-  
-	for (int i=0; i<Nfreq; ++i) {
-		freq=freqs[i];
-		configureSineWave();
-    
-		for (int j=0; j<4; ++j) {
-			setCswitchCal(CAL_states[j]);
-      delay(10);
-			digitalWrite(PIN_MUTE , HIGH);  // unmute
-      run2();
-      trigger();
-      delay(1000);
-      // Pause for a tenth of a second between notes.
-      stop_trigger();
-      digitalWrite(PIN_MUTE , LOW);  // mute
-			delay(200);
-		}
-   }
-   delay(1000);
-   stopMicro();
-   delay(200);
-   strcpy(txString,"End of test");
-   Send_tx_String(txString) ;
-}
-
-void frequencySweep(int start,int stp,int Delta){
-	  int A=start/Delta;
-	  int B=stp/Delta;
-	  delay(500);
-	  strcpy(txString,"Starting frequency sweep");
-	  Send_tx_String(txString) ;
-	  startMicro();   // start recording of ADC data for given duration in seconds
-	  delay(2000);
-    digitalWrite(PIN_MUTE , HIGH);  // unmute
-    
-	  for (int i=A; i<B; ++i) {
-		  // Play the note for a quarter of a second.
-		  freq=i*Delta;
-		  configureSineWave();
-		  // sprintf(subString,"f: %d",freq );
-      // strcat(txString,subString);
-		  digitalWrite(PIN_MUTE , HIGH);  // unmute
-		  // run();
-      run2();
-      trigger();
-		  delay(200);
-		  // Pause for a tenth of a second between notes.
-		  stop_trigger();
-		  digitalWrite(PIN_MUTE , LOW);  // mute
-		  delay(50);
-	  }
-    Send_tx_String(txString);
-    delay(1000);
-    stopMicro();
-	  strcpy(txString,"End of sweep");
-	  Send_tx_String(txString) ;
-}	  
-
-void GainSweep(int start,int stp,int Delta){
-
-    if(stp>MAXGAIN){
-      sprintf(txString,"Stop gain is larger then maximum gain: %04X",MAXGAIN );
-      Serial.print("STOP");
-      Serial.println(stp);
-      Serial.print("Maxgain");
-      Serial.println(MAXGAIN);
-      Send_tx_String(txString) ;
-      return;
-      }
-    
-	  int A=start/Delta;
-	  int B=stp/Delta;
-
-	  
-	  delay(500);
-	  strcpy(txString,"Starting gain sweep");
-	  Send_tx_String(txString) ;
-	  startMicro();   // start recording of ADC data for given duration in seconds
-	  delay(2000);
-      
-      
-	  for (int j=0; j<Nfreq; ++j) {
-		  freq=freqs[j];
-		  configureSineWave();
-		  // sprintf(subString,"f: %d",freq );
-      // strcat(txString,subString);
-      setCswitchTx(CSw_states[j]);
-		  for (int i=A; i<B; ++i) {
-			  // Play the note for a quarter of a second.
-			  setGain2(i*Delta);
-			  // sprintf(txString,",g: %d",gainDAT ); 
-			  digitalWrite(PIN_MUTE , HIGH);  // unmute
-			  run2();
-			  trigger();
-			  delay(200);
-			  // Pause for a tenth of a second between notes.
-			  stop_trigger();
-			  digitalWrite(PIN_MUTE , LOW);  // mute
-			  delay(50);
-		  }
-		delay(1000);
-    }
-    Send_tx_String(txString);
-    stopMicro();
-	  strcpy(txString,"End of sweep");
-	  Send_tx_String(txString) ;
-}
-
-
-void GainSweep2(int start,int stp,int Delta){
-  // Same as GainSweep but don't go over different frequencies!
-
-    if(stp>MAXGAIN){
-      sprintf(txString,"Stop gain is larger then maximum gain: %04X",MAXGAIN );
-      Serial.print("STOP");
-      Serial.println(stp);
-      Serial.print("Maxgain");
-      Serial.println(MAXGAIN);
-      Send_tx_String(txString) ;
-      return;
-      }
-    
-	  int A=start/Delta;
-	  int B=stp/Delta;
-	  
-	  delay(500);
-	  strcpy(txString,"Starting gain sweep V2");
-	  Send_tx_String(txString) ;
-	  startMicro();   // start recording of ADC data for given duration in seconds
-	  delay(2000);      
-		  for (int i=A; i<B; ++i) {
-			  // Play the note for a quarter of a second.
-			  setGain2(i*Delta);
-			  // sprintf(txString,",g: %d",gainDAT ); 
-			  digitalWrite(PIN_MUTE , HIGH);  // unmute
-			  run2();
-			  trigger();
-			  delay(1000);
-			  // Pause for a tenth of a second between notes.
-			  stop_trigger();
-			  digitalWrite(PIN_MUTE , LOW);  // mute
-			  delay(100);
-		  }
-		delay(1000);
-    Send_tx_String(txString);
-    stopMicro();
-	  strcpy(txString,"End of sweep");
-	  Send_tx_String(txString) ;
-}
-
-void FsubSweep(int Df,int Delta){
-	  delay(200);
-	  strcpy(txString,"Starting f sweep around res. freqs.");
-	  Send_tx_String(txString) ;
-	  startMicro();   // start recording of ADC data for given duration in seconds
-	  delay(1000);
-
-	  for (int j=0; j<Nfreq; ++j) {
-		  int mainfreq=freqs[j];
-		  int start=mainfreq-Df;
-      int stop=mainfreq+Df;
-      int A=start/Delta;
-	    int B=stop/Delta;
-      Serial.print("Main freq:");
-      Serial.println(mainfreq);
-    
-      for (int i=A; i<B+1; ++i) {
-        freq=i*Delta;
-        configureSineWave();
-        setCswitchTx(CSw_states[j]);
-        sprintf(subString,"f: %d",freq );
-        // strcat(txString,subString);
-        Serial.print(subString);
-        digitalWrite(PIN_MUTE , HIGH);  // unmute
-        run2();
-        trigger();
-        delay(500);
-        stop_trigger();
-        digitalWrite(PIN_MUTE , LOW);  // mute
-        delay(50);
-        Serial.print('.');
-		  }
-		
-    delay(300);
-    }
-    Send_tx_String(txString);
-    stopMicro();
-	  strcpy(txString,"End of sweep");
-	  Send_tx_String(txString) ;
-}
 
 
 
@@ -489,6 +275,13 @@ void FsubSweep(int Df,int Delta){
 // SignalGen functions
 // ---------------------------------------------
 // /////////////////////////////////////////////
+void configureResFreq(int ifreq){   //set resonant frequency from set or possible frequencies.
+  freq=freqs[ifreq];
+  CSw_state=CSw_states[ifreq];
+  configureSineWave();
+  setCswitchTx ( CSw_state );
+}
+
 
 void configureSineWave(){
 
@@ -514,25 +307,31 @@ void configureSineWave(){
 }
 
 void run(){
-  out=readReg(0x1E);
-  Serial.print("Current run mode:");
-  Serial.println(out,BIN);
+  // out=readReg(0x1E);
+  // Serial.print("Current run mode:");
+  // Serial.println(out,BIN);
   writeReg(0x1E,0x0001);
+  delay(1);
   trigger();
   out=readReg(0x1E);
   Serial.print("New run mode:");
   Serial.println(out,BIN);
+  if (out!=0x0001){
+	ADCstarted=0;
+	Serial.print("ADC didn't start correctly!");
+  }
 }
 
 void run2(){
   writeReg(0x1E,0x0001);
   trigger();
+  out=readReg(0x1E);
+  if (out!=0x0001){
+	 ADCstarted=0;
+  }
 }
 
-void program(){
-  digitalWrite(triggerDAC,HIGH);
-  writeReg(0x1E,0x0000);
-}
+
 void trigger(){
   // Serial.println("[AWG] Triggerring");
   digitalWrite(triggerDAC,HIGH);
@@ -553,26 +352,70 @@ void setGain2(int value){
   gainDAT=value;
   writeReg(0x35,gainDAT); //digital gain ch1
   writeReg(0x34,gainDAT); //digital gain Ch2
-  writeReg(0x33,gainDAT); //digital gain Ch3
+  writeReg(0x33,gainDAT); //digital gain Ch3  
 }
+
+
 
 // /////////////////////////////////////////////
 // --------------------------------
 // other functions
 //---------------------------------
 // /////////////////////////////////////////////
-
-
 float readVBat(){
-	int Vbat_int= analogRead(PIN_VBat);
-	Vbat =Vbat_int/4095*3.2*10;
-	// Serial.printf("Voltage battery: %05.2f V\n", Vbat)
-	return Vbat;
+	int VBat_int= analogRead(PIN_VBat);
+	VBat =float(VBat_int)/4095*3.2*10;
+	// Serial.printf("Voltage battery GPIO value: %d \n", VBat_int);
+  // Serial.printf("Voltage battery: %05.2f V\n", VBat);
+	return VBat;
+}
+void logVBat(){
+    readVBat();
+	  sprintf(subString,"VBat %05.2f\n",VBat );
+	  int msglen=11;
+    for (int i = 0; i < msglen; i++){
+      tempBuffer[i] = uint8_t(subString[i]);
+    } 
+    writeToBuffer(tempBuffer, msglen);
 }
 
 
+void logTemp(Adafruit_MCP9808 sensor, int  sensorNumber){
+  float c = sensor.readTempC();
+  // Serial.printf("Temp%d: %.4f* C\n",sensorNumber,c); 
+  sprintf(subString,"Temp%d %07.4f\n",sensorNumber,c );
+  int msglen=strlen(subString);
+  for (int i = 0; i < msglen; i++){
+      tempBuffer[i] = uint8_t(subString[i]);
+    } 
+    writeToBuffer(tempBuffer, msglen);
+}
+
+// void logTemp0(){
+//   float c = tempsens1.readTempC();
+//   Serial.printf("Temp1: %.4f* C\n",c); 
+
+//   sprintf(subString,"Temp1 %07.4f\n",-c );
+//   int msglen=strlen(subString);
+//   for (int i = 0; i < msglen; i++){
+//       tempBuffer[i] = uint8_t(subString[i]);
+//     } 
+//     writeToBuffer(tempBuffer, msglen);
+// }
 
 
+// void logTemp2(int  sensorNumber){
+//   int sensorAdderess = TempSens_addr[sensorNumber];
+//   sensor.begin(sensorAdderess);
+//   float c = sensor.readTempC();
+//   Serial.printf("Temp%d: %.4f* C\n",sensorNumber,c); 
+//   sprintf(subString,"Temp%d %07.4f\n",sensorNumber,c );
+//   int msglen=strlen(subString);
+//   for (int i = 0; i < msglen; i++){
+//       tempBuffer[i] = uint8_t(subString[i]);
+//     } 
+//     writeToBuffer(tempBuffer, msglen);
+// }
 
 // /////////////////////////////////////////////
 // --------------------------------
@@ -581,12 +424,8 @@ float readVBat(){
 // /////////////////////////////////////////////
 void setCswitchTx ( uint8_t state ){
 
-  //  CSwitch_code = 0xFF-((state>>2)*3 )<<6 ;// parse first bit
-  //  CSwitch_code = CSwitch_code - ((state>>1)%2*3 )<<4 ;// parse second bit
-  //  CSwitch_code = CSwitch_code - ((state)%2*3 )<<2  ;  // parse third bit
    CSwitch_code = 0xFF-state;
-
-	 //Write message to the slave
+	 //Write message to preiferal
 	 Serial.printf("New state is: %d\n", state);
 	 Serial.printf("Setting Cswitch #: 0X%x to: 0X%x\n", CSwitchTx_address,CSwitch_code);
 	 Wire.beginTransmission(CSwitchTx_address); // For writing last bit is set to 0 (set to 1 for reading)
@@ -676,7 +515,7 @@ uint32_t spiCommand( uint32_t msg , int CS ) {  //use it as you would the regula
   uint32_t out= spi.transfer32(msg);
   digitalWrite(CS, HIGH); //pull ss high to signify end of data transfer
   spi.endTransaction();
-
+  // Serial.printf("Command to SPI send with CS: %d",CS);
   return out;
 }
 
@@ -694,11 +533,12 @@ void writeReg (uint16_t addr,uint16_t dat) {
 
 uint32_t readReg(uint16_t addr){
 //   Serial.println("Reading register");
+  //  Serial.printf("Reading register: CS_DAC: %d",CS_DAC);
    uint32_t msg = (0x80 << 24) + (addr << 16) + 0x0000;
    uint16_t out=spiCommand(  msg ,CS_DAC);
+   
    return out;
 }
-
 
 
 
@@ -854,7 +694,8 @@ String printDateTime() {
 
 
 void setIMX5message(){
-	sprintf(asciiMessage, "$ASCB,512,,,%d,,,,,,,,,",IMX5freq);
+	int IMXrate2=int( round(IMXrate/IMUdataRate));
+	sprintf(asciiMessage, "$ASCB,512,,,%d,,,,,,,,,",IMXrate2);
 }
 
 
@@ -1010,10 +851,12 @@ void Write_header() {
   dataFile.print(":");
   dataFile.println(Second);
   dataFile.print(F("# Script version: "));
-  dataFile.println(version);
+  dataFile.println(Version);
   dataFile.print(F("# IMX5 NMEA settings: "));
   dataFile.println(asciiMessage);
-
+  dataFile.println(F("#Signal generation settings: "));
+  dataFile.println(F("# --------------------------"));
+  dataFile.printf("# Frequency: %d",freq);
   dataFile.println("#");
 }
 
@@ -1091,13 +934,15 @@ void makeFiles(fs::FS &fs) {
 }
 
 
+
+
 void Write_stop() {
   dataFile.println(F("#STOP"));
-  // dataFile.print(F("# Measurements stopped on: "));
-  // getDateTime( );
-  // dataFile.print(printDateTime());
   dataFile.println(F("#--------------------------------------"));
 }
+
+
+
 
 void writeToBuffer(uint8_t *tempBuf, int &bitesToWrite) {
   // move BufferHead if circular buffer is full
@@ -1141,13 +986,19 @@ void writeToBuffer(uint8_t *tempBuf, int &bitesToWrite) {
 
 
 
-
-
-
-
 void startMeasuring() {
   BLE_message = true;
-
+  
+  // Configure DAC
+  //-----------
+  stop_trigger();
+  delay(10);
+  configureResFreq(ifreq);
+  setCswitchCal(0);
+  delay(10);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  
+  
   makeFiles(SD);
   delay(500);
 
@@ -1170,19 +1021,6 @@ void startMeasuring() {
   delay(200);
 	
 	
-  // Start DAC
-  //-----------
-  configureSineWave();
-  setCswitchTx(CSw_state);
-  delay(10);
-  setCswitchCal(0);
-  delay(10);
-  digitalWrite(PIN_MUTE , HIGH);  // unmute
-  run2();
-  trigger();
-	
-	
-	
   while (RS232.read() >= 0)
     ;  // flush the receive buffer.
   // while (IMX5.read() >= 0)
@@ -1195,8 +1033,14 @@ void startMeasuring() {
   FormatAsciiMessage(infoMsg, sizeof(infoMsg), asciiMessageformatted);
   IMX5.write(asciiMessageformatted);  //send instruction for sending ASCII messages
 
+  
+  startMicro();	
 
-  strcpy(txString, "Starting measuring!");
+  // Start DAC
+  //-----------
+  run();
+
+  strcpy(txString, "Started measurement!");
   Serial.println(txString);
 }
 
@@ -1208,7 +1052,14 @@ void stop_Measuring(fs::FS &fs) {
   measuring = false;  // Set flag to false
   BLE_message = true;
   Serial.println("Turning dataMeasuring OFF!");
+  
+  //Stop DAC
+  stop_trigger();
+  digitalWrite(PIN_MUTE , LOW);  // mute
 
+  stopMicro();
+  
+  
   //  Empty data buffer
   // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   Serial.print("Total bytes in buffer:");
@@ -1299,24 +1150,47 @@ void parse( String rxValue){     //%toCheck
 	check_laser();
   } else if (rxValue.indexOf("CHECKINS") != -1) {
 	check_INS();
-  } else if (rxValue.indexOf("INSFREQ") != -1) {
+  } else if (rxValue.indexOf("INSRATE") != -1) {
 	  Serial.println("Setting new frequency value! ");
-    int index = rxValue.indexOf(":");\
+    int index = rxValue.indexOf(":");
     int index2 = rxValue.indexOf(":",index+1);
     if (index !=-1 and index2 !=-1){
 		if (!measuring) {
-		  IMX5freq=rxValue.substring(index+1,index2).toInt();
-		  sprintf(txString,"New frequency is: %d ms",IMX5freq );
+		  IMXrate=rxValue.substring(index+1,index2).toInt();
+		  sprintf(txString,"New rate is: %d ms",IMXrate );
 		  Serial.println(txString);
 		  setIMX5message(); //update ASCII setting message
 		  setupINS(); //send setting message to IMX5
 		  } else {
-			Serial.println("DataMeasuring running. Can't read file list now. First stop measurment!");
+			sprintf(txString,"Data measuring is running. Can't change IMX rate now. First stop measurment!");
+			Serial.println(txString);
 		}
     } else {
-      sprintf(txString,"INS requency (ms) can not be parsed from string '%s''",rxValue);
+      sprintf(txString,"INS frequency (ms) can not be parsed from string '%s''",rxValue);
       Serial.println(txString);
     }
+	
+	
+  } else if (rxValue.indexOf("SETRESFREQ") != -1) {
+	  Serial.println("Setting new frequency value! ");
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+    if (index !=-1 and index2 !=-1){
+      ifreq=rxValue.substring(index+1,index2).toInt();
+      if (ifreq<Nfreq and ifreq>=0 ){
+		  stop_trigger();
+		  configureResFreq(ifreq);
+		  sprintf(txString,"New resonant frequency is: %d",freqs[ifreq]);
+		  Serial.println(txString);
+	  }else {
+		  sprintf(txString,"Error! Pass a valid index for resonant frequency between 0 and '%d''", Nfreq-1);
+	  }
+    } else {
+      sprintf(txString,"Resonant frequency can not be parsed from string '%s''",rxValue);
+      Serial.println(txString);
+    }
+	
+	
   } else if (rxValue.indexOf("SETFREQ") != -1) {
 	  Serial.println("Setting new frequency value! ");
     int index = rxValue.indexOf(":");\
@@ -1331,29 +1205,78 @@ void parse( String rxValue){     //%toCheck
       Serial.println(txString);
     }
   } else if (rxValue.indexOf("SETGAIN2") != -1) {
-    Serial.println("Setting new digital gain value! ");
-    int index = rxValue.indexOf(":");\
-    int index2 = rxValue.indexOf(":",index+1);
-    if (index !=-1 and index2 !=-1){
-      rxValue.substring(index+1,index2).toCharArray(datStr ,index2-index+1);
-      setGain2(strtoul (datStr, NULL, 16));
-      Serial.println(datStr);
-      sprintf(txString,"New gain tuning word is: %04X",gainDAT );
-      Serial.println(txString);
-    } else {
-      sprintf(txString,"Gain can not be parsed from string '%s''",rxValue);
-      Serial.println(txString);
+      Serial.println("Setting new digital gain value! ");
+      int index = rxValue.indexOf(":");\
+      int index2 = rxValue.indexOf(":",index+1);
+      if (index !=-1 and index2 !=-1){
+        rxValue.substring(index+1,index2).toCharArray(datStr ,index2-index+1);
+        setGain2(strtoul (datStr, NULL, 16));
+        Serial.println(datStr);
+        sprintf(txString,"New gain tuning word is: %04X",gainDAT );
+        Serial.println(txString);
+        out=readReg(0x35);
+        Serial.print("New gain:");
+        Serial.println(out,BIN);
+      } else {
+        sprintf(txString,"Gain can not be parsed from string '%s''",rxValue);
+        Serial.println(txString);
     }  
 	
   } else if (rxValue.indexOf("SCANI2C") != -1) {
-    Serial.println("Scanning I2C devices");
-    scanI2C ();
+      Serial.println("Scanning I2C devices");
+      scanI2C ();
 	
   } else if (rxValue.indexOf("VBAT") != -1) {
-    BLE_message = true;
-	readVBat();
-	sprintf(txString,"Voltage battery: %02.1f V\n", Vbat)
-	Serial.println(txString);
+      BLE_message = true;
+      VBat=readVBat();
+      sprintf(txString,"Voltage battery: %05.2f V\n", VBat);
+      Serial.println(txString);
+    
+  } else if (rxValue.indexOf("TEMP") != -1) {
+      BLE_message = true;
+      float c = tempsens1.readTempC();
+      sprintf(txString,"Temperature: %.4f* C\n",c);
+      Serial.println(txString);
+
+  } else if (rxValue.indexOf("STROBE") != -1) {
+      Serial.println("strobe pulse");
+      pulseStrobeIMX5(); 
+	
+  } else if (rxValue.substring(0,4)== "SPIR"  and rxValue.charAt(8)== 'R') {
+      rxValue.substring(4,8).toCharArray(addrStr,8);
+      addr=strtoul (addrStr, NULL, 16);
+      Serial.print("Reading register: ");
+  //          Serial.println(addr, HEX);
+      out=readReg(addr);
+      sprintf(txString2,"Addr:%#02X Data:",addr);
+      Serial.print(txString2);
+      Serial.println(out,BIN);
+
+	  
+  // Write to SPI register    
+  } else if (rxValue.indexOf("SPIW") != -1  and (rxValue.charAt(8) == 'X' or rxValue.charAt(8) == 'B')) {
+	  if(rxValue.charAt(8) == 'X'){
+		  rxValue.substring(9,15).toCharArray(datStr,7);
+		  Serial.print(datStr);
+		  dat=strtoul (datStr, NULL, 16);
+		
+	  }else if(rxValue.charAt(8)== 'B'){
+		   rxValue.substring(9,25).toCharArray(datStr,17);
+//               Serial.print(datStr);
+		   dat=strtoul (datStr, NULL, 2);
+	  }
+	  rxValue.substring(4,8).toCharArray(addrStr,5);
+	  addr=strtoul (addrStr, NULL, 16);
+	  
+//          Serial.print("Writing register: ");
+//          Serial.print(addr, HEX);
+//          Serial.print(", data: ");
+//          Serial.println(dat, HEX);
+	  sprintf(txString2,"Writing register:%#02X Data:%#04X",addr);
+	  Serial.print(txString2);
+	  Serial.println(dat,BIN);
+	  writeReg(addr,dat);
+	
 	
   } else {
 	BLE_message = true;
@@ -1501,16 +1424,14 @@ void commands() {
   strcat(txString, "\nCommands \n# --------------------------------------\n");
   strcat(txString, "\n Serial only\n# .................\n");
   strcat(txString, "READ Read last file of last measurement. If argument is passed with READ:<< nfile>>: read file nfile \nLIST  Get list of files in SD card \n ");
-
-  strcat(txString, "\n Serial and BLE:\n# .................\n");
-  strcat(txString, " STOP  Stops measurement \nSTART Starts new measurement \nRATE:<<N>>: Set sampling rate to N \nCHECKATT  Get attitude angles from IMU anf GPS coordinates \n CHECKLASER  Get Laser data for 1 second and send it over BLE and serial \nCOMS  List commands \nLOGGPS:<<b>>: Log GPS data if b=1  (Default) ");
   Send_tx_String(txString);
   delay(100);
-  strcpy(txString, "");
-  strcat(txString, "\n BLE only:\n# .................\n");
-  strcat(txString, "CHECKIMU  Get IMU data and send them over BLE+serial for manual check \nDYNMODEL:<<n>>: Set dynamic model to n.  Sensor need to be recalibrated after changing the setting.\n        n=4: Automotive (default) \n        n=0: Applications with low acceleration. \n        n=6: Airborne. Greater vertical acceleration  \n");
-  strcat(txString, "IMUCAL:<<b>>: Change setting for regular check for IMU calibration. b=0,1 \n LOGRMX:<<b>>: Log RMX messages or not. b=0,1 \nNAVPVT:<<b>>: same \nNAVPVAT:<<b>>: same  \n");
-  strcat(txString, "ESFINS:<<b>>: same\nESFRAW:<<b>>:  same \nESFMEAS:<<b>>:  same \nESFALG:<<b>>: same \n");
+  strcat(txString, "\n Serial and BLE:\n# .................\n");
+  strcat(txString, "STOP  Stops measurement \nSTART Starts new measurement  \n" );
+  strcat(txString, "CHECKLASER  Get Laser data for 1 second and send it over BLE and serial \n" );
+  strcat(txString, "COMS  List commands \n");
+  strcat(txString, "CHECKIMU  Get IMU data and send them over BLE+serial for manual check \n");
+  
   strcat(txString, "# --------------------------------------\n");
   Send_tx_String(txString);
   delay(100);
@@ -1558,7 +1479,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 
 
 void setup_BLE() {
-  Serial.println("bluetooth connection: 'GNSS BLE UART' ");
+  Serial.printf("bluetooth connection: %s \n",BLEname);
   // Create the BLE Device
   BLEDevice::init(BLEname);
 
@@ -1614,7 +1535,7 @@ void setup() {
 
   Serial.begin(115200);
 
-	//Mute and Enable PINS
+	//Mute and Enable PINs Amplifier MA12070 
 	pinMode(PIN_EN , OUTPUT); 
 	digitalWrite(PIN_EN , HIGH);   // must be =1 at startup
 	pinMode(PIN_MUTE , OUTPUT); 
@@ -1623,7 +1544,8 @@ void setup() {
 
 	// Initialize the I2C transmitter.	
 	Wire.begin();	
-	
+	Serial.println("Wire set up");
+  
 	// Set the initial state of the pins on the PCF8574 devices
 	Wire.beginTransmission(CSwitchTx_address); // device 1
     Wire.write(0xff); // all ports off
@@ -1634,16 +1556,23 @@ void setup() {
     Wire.write(0xff); // all ports off
     error = Wire.endTransmission();
     Serial.printf("endTransmission on CSwitch CalibCoil: %u\n", error);
-	
 
+if (!tempsens1.begin(Temp1_address)) {
+    Serial.println("Couldn't Temperature sensor 1! Check your connections and verify the address is correct.");
+  }	
+if (!tempsens2.begin(Temp2_address)) {
+    Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
+  }
 
-	//enable MA12070P to be allow to acces registers
+	//enable MA12070 to be allow to acces registers
 	digitalWrite(PIN_EN , LOW);
 
   // Setup RS232 connection to Laser
   //--------------------
+  Serial.println("Connecting to LASER");
   RS232.begin(baudrateRS232, SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
   RS232.setRxBufferSize(Laser_BufferSize);
+  Serial.println("Connected to LASER");
   //    delay(500);
   //  	RS232.write(0x1B);  // stop sending data
   //    delay(500);
@@ -1670,8 +1599,15 @@ void setup() {
   // Setup SPI connection
   //--------------------
   spi.begin(SCK, MISO, MOSI, CS_SD);  
-  
-  
+  Serial.println("Started SPI");
+  pinMode(CS_SD, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
+  digitalWrite(CS_SD, HIGH);
+  pinMode(CS_DAC, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
+  digitalWrite(CS_DAC, HIGH);
+  pinMode(CS_MSP430 , OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
+  digitalWrite(CS_MSP430 , HIGH);
+  pinMode(triggerDAC , OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
+  digitalWrite(triggerDAC, HIGH);
   
   
   // Setup SD connection
@@ -1681,6 +1617,8 @@ void setup() {
     Serial.println("Card Mount Failed");
     while (1)
       ;
+  } else{
+    Serial.println("SD mounted");
   }
 
   uint8_t cardType = SD.cardType();
@@ -1817,19 +1755,41 @@ void loop() {
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if (lastTime_flushSD + flushSD_intervall < millis()) {
       dataFile.flush();
+      dataFile.flush();
       lastTime_flushSD = millis();
       Serial.println("flushed");
     }
 
     // Read battery voltage
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
-	if (lastTime_VBat + VBat_intervall < millis()) {
-	readVBat();
-	lastTime_VBat = millis();
-	sprintf(subString,"#VBAT %05.2f\n",VBat );
-	writeToBuffer(subString, 12);
-	}
+	  if (lastTime_VBat + VBat_intervall < millis()) {
+      lastTime_VBat = millis();
+      logVBat();
+	  }
+
+    // Get Temperature
+    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    if (lastTime_Temp + Temp_intervall < millis()) {
+      lastTime_Temp = millis();
+      // long time=millis();
+      logTemp(tempsens1,1);
+      logTemp(tempsens2,2);
+      // Serial.printf("Time: %d ms", millis()-time);
+      // for  (int i = 0; i < N_TempSens; i++) {
+      //     Serial.printf("Reading Sensor: %d", i);
+      //     time=millis();
+      //     logTemp2(i);
+      //     Serial.printf("Time: %d ms", millis()-time);
+      // }
+    }
 	
+	// Send strobe pulse every "strobe_intervall"
+    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    if (lastTime_STROBE + STROBE_intervall < millis()) {
+      pulseStrobeIMX5();
+      Serial.println("STROBE");
+      lastTime_STROBE = millis(); 
+    }
 	
   } else {
     delay(50);  // wait 50 ms if not measuring

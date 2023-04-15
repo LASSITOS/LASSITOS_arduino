@@ -32,9 +32,10 @@ int PIN_Rx = 26; //  Hardware RX pin, to PIN10 on IMX5
 int PIN_Tx = 25; //  Hardware TX pin, to PIN8 on IMX5
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-int baudrateIMX5= 115200 ;
+int baudrateIMX5= 230400 ;
 unsigned long lastTime;
-#define WriteSize 128 // Write data to the SD card in blocks of 512 bytes
+#define WriteSize 25 // Write data to the SD card in blocks of 512 bytes
+#define buffersize 512
 uint8_t *myBuffer; // A buffer to hold the data while we write it to SD car
 int bitesToWrite;
 int lastTime_logstatus;
@@ -82,7 +83,7 @@ void setup() {
   IMX5.begin(baudrateIMX5,SERIAL_8N1, PIN_Rx, PIN_Tx);  // Use this for HardwareSerial
   Serial.println("Started serial to IMX5");
 
-  myBuffer = new uint8_t[WriteSize*2]; // Create our own buffer to hold the data while we write it to SD card
+  myBuffer = new uint8_t[buffersize]; // Create our own buffer to hold the data while we write it to SD card
   
 
   if (!FormatAsciiMessage( asciiMessage,  sizeof(asciiMessage),asciiMessageformatted)){
@@ -138,14 +139,14 @@ void loop() {
   // }
  if ( IMX5.available() >= WriteSize) {   
      bitesToWrite=IMX5.available();
-	 Serial.println(",");
-	 if (bitesToWrite>WriteSize*2) {
-        bitesToWrite=WriteSize*2;
-        Serial.println("More bits than writesize");
+	//  Serial.println(",");
+	 if (bitesToWrite>buffersize) {
+        bitesToWrite=buffersize;
+        Serial.println("More bits than buffersize");
      }
-     IMX5.readBytes(myBuffer, WriteSize);
-     Serial.write( myBuffer, WriteSize);   
-     Serial.println(".");
+     IMX5.readBytes(myBuffer, bitesToWrite);
+     Serial.write( myBuffer, bitesToWrite);   
+    //  Serial.println(".");
    }
     
 										   

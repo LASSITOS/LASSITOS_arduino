@@ -112,7 +112,7 @@ int  IMX5_strobe = 4; //  GPIO for STROBE input (first), to  PIN2 on IMX5
 #define baudrateIMX5 230400  //115200
 #define IMX5_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
 #define IMX5_log_intervall 2000
-#define flushSD_STROBE  5000
+#define STROBE_intervall  5000
 char asciiMessage[] = "$ASCB,512,,,100,,,,30000,,30000,,,";  // // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 
 char asciiMessageformatted[128];
@@ -1254,26 +1254,14 @@ void loop() {
 
     // Send strobe pulse every "strobe_intervall"
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if (lastTime_STROBE + flushSD_STROBE < millis()) {
+    if (lastTime_STROBE + STROBE_intervall < millis()) {
       pulseStrobeIMX5();
       Serial.println("STROBE");
       lastTime_STROBE = millis(); 
     }
    
 
-    // // // check data in buffer once per 10 seconds
-    // // // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    // if (millis() > (lastPrint + 10000)) {  //
-    //   Serial.print("Data in Buffer:");
-    //   Serial.println((myBufferSize + BufferTail - BufferHead) % myBufferSize);
-    //   Serial.print("Data in IMX5:");
-    //   Serial.println(IMX5.available());
-    //   Serial.print("Data in Laser:");
-    //   Serial.println(RS232.available());
-    //   BLE_message = true;
-    //   strcpy(txString, ":");
-    //   lastPrint = millis();  // Update lastPrint
-    // }
+
 
     // flush Laser buffer if stuck
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
