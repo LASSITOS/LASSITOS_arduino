@@ -69,6 +69,8 @@ uint16_t out;
 float VBat=0;
 long VBat_intervall = 10000;
 
+
+
 // settings SD card
 //------------------
 
@@ -191,6 +193,9 @@ bool BLE_message = false;
 
 
 
+
+
+
 //-=-=-=-=-=-=-=-=-=-=-=-
 // Function generation settings
 //-=-=-=-=-=-=-=-=-=-=-=-
@@ -230,12 +235,23 @@ uint8_t CSw_state=CSw_states[ifreq];
 int CAL_states[]={0,1,2,4};
 int CAL_state=0;
 
-#define MAXGAIN 0x3000
+#define MAXGAIN 0x1800
 
 
 //-=-=-=-=-=-=-=-=-=-=-=-
 
 
+
+
+//-=-=-=-=-=-=-=-=-=-=-=-
+// Microcontroller communication settings
+//-=-=-=-=-=-=-=-=-=-=-=-
+# define CDM_start 0x81
+# define CDM_stop 0x82
+# define CDM_status 0xFF
+
+// status flags 
+bool MSP430_measuring =0;
 
 
 
@@ -245,17 +261,61 @@ int CAL_state=0;
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
-// to be done over SPI
+
 void startMicro(){
-      strcpy(txString,"Mock start of Microcontroller!/n");
-      Send_tx_String(txString);
+	uint8_t startMSG[13];
+  char timestr[13];
+	sprintf(timestr, "%02d%02d%02d%02d%02d", Year % 1000, Month, Day, Hour, Minute); 
+	startMSG[0]=CDM_start;
+	for (int i=0;i<11;i++){
+    startMSG[1+i] = uint8_t(timestr[i]);
+  }
+
+  startMSG[12]=0;
+  
+  
+  // Serial.print("Timestring: ");
+  // Serial.println(timestr);
+  // Serial.print("Start message: ");
+  // for (int i=0;i<12;i++){
+    // Serial.printf("0x%02X.",startMSG[i]);
+  // }
+  // Serial.println("");
+
+	piTransfer2( startMSG, 12, CS_MSP430 );
+
+  
+  delay(500)   ;  // Wait until microcontroller started the measurement
+	uint8_t out2=spiCommand8( CDM_status   , CS_MSP430 );
+	Serial.print("Microcontroller status: ");
+  Serial.printf("%02X",out2);
+  Serial.println(" ");
+  // Parsing  response from microcontroller
+	MSP430_measuring = out & 0b00000001;
+  
 }
 
 void stopMicro(){ 
-      strcpy(txString,"Mock stop of Microcontroller!/n");
-      Send_tx_String(txString);
+    uint8_t out=spiCommand8( CDM_stop  , CS_MSP430 );
+	  delay(100)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
+	  uint8_t out2=spiCommand8( CDM_status , CS_MSP430 );
+	  
+    Serial.printf("Microcontroller status: %b",out2);
+    Serial.println(" ");
+    
+	  // Parsing  response from microcontroller
+	  
+	  Serial.print("Send stop to Microcontroller!");
 }
 
+void statusMicro(){   
+	  uint8_t out=spiCommand8( CDM_status   , CS_MSP430 );
+	  
+	  // Parsing  response from microcontroller
+	  MSP430_measuring = out & 0b00000001 ;
+	  
+	  Serial.printf("Microcontroller status: %b",out);
+}
 
 
 
@@ -509,7 +569,7 @@ void scanI2C (){
 // ---------------------------------------------
 // /////////////////////////////////////////////
 
-uint32_t spiCommand( uint32_t msg , int CS ) {  //use it as you would the regular arduino SPI API
+uint32_t spiCommand32( uint32_t msg , int CS ) {  
   spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
   digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
   uint32_t out= spi.transfer32(msg);
@@ -519,9 +579,43 @@ uint32_t spiCommand( uint32_t msg , int CS ) {  //use it as you would the regula
   return out;
 }
 
+
+uint8_t spiCommand8( uint8_t msg , int CS ) {  
+  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
+  digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
+  uint8_t out= spi.transfer(msg);
+  digitalWrite(CS, HIGH); //pull ss high to signify end of data transfer
+  spi.endTransaction();
+  // Serial.printf("Command to SPI send with CS: %d",CS);
+  return out;
+}
+
+
+void spiTransfer( uint8_t msg[], uint32_t size, int CS ) {  
+  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
+  digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
+  spi.transfer(msg,size);
+  digitalWrite(CS, HIGH); //pull ss high to signify end of data transfer
+  spi.endTransaction();
+}
+
+
+void spiTransfer2( uint8_t msg[], uint32_t size, int CS ) {  
+  // Serial.print("start transfer");
+  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
+  digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
+  for (int i=0; i<size; ++i){
+    spi.transfer(msg[i]);    
+    // Serial.print(".");
+  }
+  digitalWrite(CS, HIGH); //pull ss high to signify end of data transfer
+  spi.endTransaction();
+  // Serial.print("stop transfer");
+}
+
 void writeMSG (uint16_t addr,uint16_t dat ) {
   uint32_t msg = (0x00 << 24) + (addr << 16) + dat;
-  spiCommand(  msg ,CS_DAC);
+  spiCommand32(  msg ,CS_DAC);
 }
 
 void writeReg (uint16_t addr,uint16_t dat) {
@@ -535,7 +629,7 @@ uint32_t readReg(uint16_t addr){
 //   Serial.println("Reading register");
   //  Serial.printf("Reading register: CS_DAC: %d",CS_DAC);
    uint32_t msg = (0x80 << 24) + (addr << 16) + 0x0000;
-   uint16_t out=spiCommand(  msg ,CS_DAC);
+   uint16_t out=spiCommand32(  msg ,CS_DAC);
    
    return out;
 }
@@ -595,6 +689,8 @@ void setupINS() {
   pulseStrobeIMX5();  
   lastTime_STROBE = millis();
 }
+
+
 
 
 void getDateTime() {

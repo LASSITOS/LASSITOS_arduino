@@ -56,8 +56,8 @@ char subString[20];
 #include <HardwareSerial.h>
 HardwareSerial UARTmicro(2);
 
-int PIN_Rx = 15; //  Hardware RX pin,
-int PIN_Tx = 33; // Hardware TX pin,
+int PIN_Rx = 39; //  Hardware RX pin,Radio PSEN
+int PIN_Tx = 33; // Hardware TX pin,Radio CS
 
 #define baudrateUART 115200 
 int loggingTime=10;   // duration of data recording 
@@ -93,7 +93,7 @@ uint8_t  CSwitch_code =0xFF;
 // Sinus function variables
 //-=-=-=-=-=-=-=-=-=-=-=-
 uint64_t clock_divider=1;
-uint64_t AWG_clock_freq =125000000; // 7372800; // 125000000; 
+uint64_t AWG_clock_freq = 7372800; // 125000000; 
 
 uint16_t freqAdd;
 // uint64_t freq;
@@ -213,6 +213,40 @@ void testLong(){
    strcpy(txString,"End of test");
    Send_tx_String(txString) ;
 }
+
+
+
+void testLongSingle(int i, int len){
+	delay(500);
+	strcpy(txString,"Starting long test");
+	Send_tx_String(txString) ;
+	startMicro();   // start recording of ADC data for given duration in seconds
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  delay(2000);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  delay(2000);
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+  freq=freqs[i];
+	configureSineWave();
+  setCswitchTx(CSw_states[i]);
+  delay(10);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  run2();
+  trigger();
+
+  delay(len);
+
+  stop_trigger();
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+  delay(1000);
+  stopMicro();
+  delay(200);
+  strcpy(txString,"End of test");
+  Send_tx_String(txString) ;
+}
+
 
 void testCal(){
 	delay(500);
@@ -758,12 +792,29 @@ void parse( String rxValue){
     digitalWrite(PIN_MUTE , LOW);  // mute
      
   } else if (rxValue.indexOf("TESTCAL") != -1 or rxValue.indexOf("testcal") != -1) { 
-	testCal();
+    testCal();
 
   } else if (rxValue.indexOf("TESTLONG") != -1 or rxValue.indexOf("testlong") != -1) { 
-	Serial.println("Starting long test");
-  testLong();
+    Serial.println("Starting long test");
+    testLong();
 
+  } else if (rxValue.indexOf("LONGSINGLE") != -1 ) { 
+    Serial.println("Starting long test single freqency");
+    int index = rxValue.indexOf(":");
+    int index2 = rxValue.indexOf(":",index+1);
+	  int index3 = rxValue.indexOf(":",index2+1);
+    if (index !=-1 and index2 !=-1 and index3 !=-1 ){
+		  int i=rxValue.substring(index+1,index2).toInt();
+	    int len=rxValue.substring(index2+1,index3).toInt();
+		  Serial.print("Frequency index:");
+      Serial.println(i);
+      Serial.print("Measuring lenght (s):");
+      Serial.println(len);
+      testLongSingle(i,len*1000);
+	  } else {
+      sprintf(txString,"Frequency index and measuring lenght could not be parsed from: '%s''",rxValue);
+      Serial.println(txString);
+	  }
   } else if (rxValue.indexOf("FSUBSWEEP") != -1 or rxValue.indexOf("fsubsweep") != -1) { 
     Serial.println("Got freq sub sweep command");
     int index = rxValue.indexOf(":");
@@ -1243,7 +1294,6 @@ void loop(){
     // do stuff here on connecting
     oldDeviceConnected = deviceConnected;
   }	
-  
   
   delay(50);
 }
