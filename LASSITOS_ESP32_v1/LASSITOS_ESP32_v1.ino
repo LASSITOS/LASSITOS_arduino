@@ -43,7 +43,7 @@ long lastTime_Temp;
 #define SCK 18
 #define MISO 19
 #define MOSI 23
-#define SPI_rate    10000000  // DAC up to 80 MHz  %toCheck
+#define SPI_rate    400000  // DAC up to 80 MHz  %toCheck
 #define SPI_rate_SD 40000000  
 #define CS_SD 5   // cip select  SD card
 #define CS_DAC 14
@@ -142,16 +142,22 @@ long Second;
 #include <Wire.h>
 #include "Adafruit_MCP9808.h"
 
+Adafruit_MCP9808 sensor = Adafruit_MCP9808();
 Adafruit_MCP9808 tempsens1 = Adafruit_MCP9808();
 Adafruit_MCP9808 tempsens2 = Adafruit_MCP9808();
-Adafruit_MCP9808 sensor = Adafruit_MCP9808();
+Adafruit_MCP9808 tempsens3 = Adafruit_MCP9808();
+Adafruit_MCP9808 tempsens4 = Adafruit_MCP9808();
+
 
 // I2C addresses
 #define  MA12070P_address 0x20
 #define  CSwitchTx_address 0x24
 #define  CSwitchCal_address 0x26
-#define  Temp1_address 0x18
-#define  Temp2_address 0x19
+#define  Temp1_address 0x18  // 000
+#define  Temp2_address 0x19  // 001
+#define  Temp3_address 0x1A  // 010
+#define  Temp4_address 0x1B  // 011
+
 
 #define N_TempSens 2
 int TempSens_addr[] ={Temp1_address,Temp2_address};
@@ -200,24 +206,31 @@ bool BLE_message = false;
 // Function generation settings
 //-=-=-=-=-=-=-=-=-=-=-=-
 uint64_t clock_divider=1;
-uint64_t AWG_clock_freq =125000000; // 7372800; // 125000000; 
+uint64_t AWG_clock_freq = 7372800; // 125000000; 
 uint16_t freqAdd;
 uint16_t freqDat;
 float gain=0;
-uint16_t gainDAT = 0x1000;
+uint16_t gainDAT = 0x400;
 
 bool ADCstarted=0;  //flag checking if ADC responded to start command
 
 //resonant frequencies:
-#define F1 1061
-#define F2 2283
-#define F3 4618
-#define F4 8651
+#define F1 720
+#define F2 1155
+#define F3 1920
+#define F4 6110
+#define F5 7037
+#define F6 8448
 
-uint64_t freqs[] ={F1,F2,F3,F4};
-int Nfreq=4;  //Number of frequencies to use
+#define F46 5130
+#define F456 4049
+
+
+uint64_t freqs[] ={F1,F2,F3,F456,F46,F4,F5,F6};
+int Nfreq=8;  //Number of frequencies to use
 int ifreq =2;
 uint64_t freq=freqs[ifreq];
+
 
 // states of CSwitch for each frequencz
 #define stateF1 0x80
@@ -226,9 +239,9 @@ uint64_t freq=freqs[ifreq];
 #define stateF4 0x01
 #define stateF5 0x10
 #define stateF6 0x08
-uint8_t CSw_states[] ={stateF1,stateF2,stateF3,stateF4};
-uint8_t CSw_state=CSw_states[ifreq];
 
+uint8_t CSw_states[] ={stateF1,stateF2,stateF3,stateF4+stateF5+stateF6,stateF4+stateF6,stateF4,stateF5,stateF6};
+uint8_t CSw_state=CSw_states[ifreq];
 #define CALF1 1055
 #define CALF2 4744
 #define CALF3 8805
@@ -237,8 +250,8 @@ int CAL_state=0;
 
 #define MAXGAIN 0x1800
 
-
 //-=-=-=-=-=-=-=-=-=-=-=-
+
 
 
 
@@ -249,6 +262,8 @@ int CAL_state=0;
 # define CDM_start 0x81
 # define CDM_stop 0x82
 # define CDM_status 0xFF
+# define CDM_status_read 0x00
+# define CDM_reset 0x84							 
 
 // status flags 
 bool MSP430_measuring =0;
@@ -265,56 +280,62 @@ bool MSP430_measuring =0;
 void startMicro(){
 	uint8_t startMSG[13];
   char timestr[13];
-	sprintf(timestr, "%02d%02d%02d%02d%02d", Year % 1000, Month, Day, Hour, Minute); 
+	sprintf(timestr, "%02d%02d%02d%02d%02d", Year % 100, Month, Day, Hour, Minute); 
 	startMSG[0]=CDM_start;
 	for (int i=0;i<11;i++){
     startMSG[1+i] = uint8_t(timestr[i]);
   }
 
   startMSG[12]=0;
-  
-  
-  // Serial.print("Timestring: ");
-  // Serial.println(timestr);
-  // Serial.print("Start message: ");
-  // for (int i=0;i<12;i++){
-    // Serial.printf("0x%02X.",startMSG[i]);
-  // }
-  // Serial.println("");
-
-	piTransfer2( startMSG, 12, CS_MSP430 );
+	spiTransfer2( startMSG, 12, CS_MSP430 );
 
   
-  delay(500)   ;  // Wait until microcontroller started the measurement
-	uint8_t out2=spiCommand8( CDM_status   , CS_MSP430 );
-	Serial.print("Microcontroller status: ");
-  Serial.printf("%02X",out2);
-  Serial.println(" ");
-  // Parsing  response from microcontroller
-	MSP430_measuring = out & 0b00000001;
-  
+  delay(1000)   ;  // Wait until microcontroller started the measurement
+	spiCommand8( CDM_status   , CS_MSP430 );
+  delay(2);
+	Serial.print("Sent start to Microcontroller");
+  statusMicro();
 }
 
 void stopMicro(){ 
-    uint8_t out=spiCommand8( CDM_stop  , CS_MSP430 );
-	  delay(100)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
-	  uint8_t out2=spiCommand8( CDM_status , CS_MSP430 );
-	  
-    Serial.printf("Microcontroller status: %b",out2);
-    Serial.println(" ");
-    
-	  // Parsing  response from microcontroller
-	  
-	  Serial.print("Send stop to Microcontroller!");
+    spiCommand8( CDM_stop  , CS_MSP430 );
+	  delay(500)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
+	  spiCommand8( CDM_status   , CS_MSP430 );
+    Serial.print("Send stop to Microcontroller!");
+    delay(2);
+    statusMicro();
 }
 
 void statusMicro(){   
-	  uint8_t out=spiCommand8( CDM_status   , CS_MSP430 );
+	  spiCommand8( CDM_status   , CS_MSP430 );
+    delay(2);
+    uint8_t out=spiCommand8( CDM_status_read   , CS_MSP430 );
+	  ParseStatus(out);
+}
+
+
+void ParseStatus(uint8_t out){   
+	  Serial.print("Microcontroller status: ");
+    Serial.printf("%02X",out);
+    Serial.println(" ");
 	  
 	  // Parsing  response from microcontroller
 	  MSP430_measuring = out & 0b00000001 ;
 	  
-	  Serial.printf("Microcontroller status: %b",out);
+    sprintf(txString2, "Micro stat: %02X", out);
+    Send_tx_String(txString2) ;
+}
+
+
+void resetMicro(){
+  spiCommand8( CDM_reset  , CS_MSP430 );
+	delay(1000)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
+	Serial.print("Send reset to Microcontroller!");
+	spiCommand8( CDM_status , CS_MSP430 );
+	delay(2);
+	uint8_t out=spiCommand8( CDM_status_read   , CS_MSP430 );
+    Serial.printf("Micro stat: %02X",out);
+    Serial.println(" ");
 }
 
 
@@ -449,6 +470,13 @@ void logTemp(Adafruit_MCP9808 sensor, int  sensorNumber){
       tempBuffer[i] = uint8_t(subString[i]);
     } 
     writeToBuffer(tempBuffer, msglen);
+}
+
+void readTemp(Adafruit_MCP9808 sensor, int  sensorNumber){
+  float c = sensor.readTempC();
+  sprintf(txString,"Temperature: %.4f* C\n",c);
+  Serial.println(txString);
+  
 }
 
 // void logTemp0(){
@@ -1006,7 +1034,7 @@ void makeFiles(fs::FS &fs) {
 
   // Check for GPS to have good time and date
   getDateTime();
-  sprintf(dataFileName, "/INS%02d%02d%02d_%02d%02d.dat", Year % 1000, Month, Day, Hour, Minute);  // create name of data file
+  sprintf(dataFileName, "/INS%02d%02d%02d_%02d%02d.csv", Year % 100, Month, Day, Hour, Minute);  // create name of data file
                                                                                                   //sprintf(dataFileName, "/testfile.csv");   // create name of data file
   Serial.println(dataFileName);
   dataFile = fs.open(dataFileName, FILE_WRITE);
@@ -1152,7 +1180,7 @@ void stop_Measuring(fs::FS &fs) {
   //Stop DAC
   stop_trigger();
   digitalWrite(PIN_MUTE , LOW);  // mute
-
+  delay(1000);
   stopMicro();
   
   
@@ -1236,6 +1264,18 @@ void parse( String rxValue){     //%toCheck
   } else if (rxValue.indexOf("STOP") != -1) {
 	measuring = false;
 	stop_Measuring(SD);
+	  
+  } else if (rxValue.indexOf("STATUS") != -1) {
+	statusMicro();
+												   
+			   
+  } else if(rxValue.indexOf("RESET") != -1){
+    ESP.restart();
+	
+  } else if(rxValue.indexOf("RESMICRO") != -1){
+    resetMicro();
+  
+	
   } else if (rxValue.indexOf("READ") != -1) {
 	readFiles(rxValue);
   } else if (rxValue.indexOf("LIST") != -1) {
@@ -1659,7 +1699,14 @@ if (!tempsens1.begin(Temp1_address)) {
 if (!tempsens2.begin(Temp2_address)) {
     Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
   }
-
+if (!tempsens3.begin(Temp2_address)) {
+    Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
+  }
+  if (!tempsens4.begin(Temp2_address)) {
+    Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
+  }
+  
+  
 	//enable MA12070 to be allow to acces registers
 	digitalWrite(PIN_EN , LOW);
 
@@ -1702,16 +1749,16 @@ if (!tempsens2.begin(Temp2_address)) {
   digitalWrite(CS_DAC, HIGH);
   pinMode(CS_MSP430 , OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
   digitalWrite(CS_MSP430 , HIGH);
-  pinMode(triggerDAC , OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
+  
+  pinMode(triggerDAC , OUTPUT); 
   digitalWrite(triggerDAC, HIGH);
   
   
   // Setup SD connection
   //--------------------
-  
   if (!SD.begin(CS_SD, spi, SPI_rate_SD)) {
     Serial.println("Card Mount Failed");
-    while (1)
+    // while (1)
       ;
   } else{
     Serial.println("SD mounted");
@@ -1870,6 +1917,8 @@ void loop() {
       // long time=millis();
       logTemp(tempsens1,1);
       logTemp(tempsens2,2);
+	  logTemp(tempsens3,3);
+	  logTemp(tempsens4,4);
       // Serial.printf("Time: %d ms", millis()-time);
       // for  (int i = 0; i < N_TempSens; i++) {
       //     Serial.printf("Reading Sensor: %d", i);
@@ -1879,13 +1928,13 @@ void loop() {
       // }
     }
 	
-	// Send strobe pulse every "strobe_intervall"
-    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if (lastTime_STROBE + STROBE_intervall < millis()) {
-      pulseStrobeIMX5();
-      Serial.println("STROBE");
-      lastTime_STROBE = millis(); 
-    }
+	// // Send strobe pulse every "strobe_intervall"
+    // // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // if (lastTime_STROBE + STROBE_intervall < millis()) {
+      // pulseStrobeIMX5();
+      // Serial.println("STROBE");
+      // lastTime_STROBE = millis(); 
+    // }
 	
   } else {
     delay(50);  // wait 50 ms if not measuring

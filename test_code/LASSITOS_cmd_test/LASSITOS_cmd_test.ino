@@ -4,7 +4,6 @@
   Date: April 7th, 2023
   License: MIT. See license file for more information but you can
   basically do whatever you want with this code.
-
   Based on Examples from multiple libraries and hardware.
   
   BLE:
@@ -64,7 +63,7 @@ unsigned long lastPrint;  // Record when the last Serial print took place
 
 long Year=2023;
 long Month=4;
-long Day=25;
+long Day=23;
 long Hour=22;
 long Minute=45;
 long Second=00;
@@ -80,22 +79,21 @@ long Second=00;
 #include <BLEUtils.h>
 #include <BLE2902.h>
 
-BLEServer *pServer = NULL;
-BLECharacteristic *pTxCharacteristic;
-bool deviceConnected = false;
-bool oldDeviceConnected = false;
+
 char txString[500];  // String containing messages to be send to BLE terminal
 char txString2[50];
 char subString[32];
 bool BLE_message = false;
 
 
-// See the following for generating UUIDs:
-// https://www.uuidgenerator.net/
-#define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"  // UART service UUID
-#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
-#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
-#define BLEname "LASSITOS BLE"
+
+
+
+
+
+
+
+
 
 
 
@@ -106,7 +104,6 @@ bool BLE_message = false;
 # define CDM_start 0x81
 # define CDM_stop 0x82
 # define CDM_status 0xFF
-# define CDM_status_read 0x00
 # define CDM_reset 0x84
 
 // status flags 
@@ -122,69 +119,74 @@ bool MSP430_measuring =0;
 
 
 void startMicro(){
-	uint8_t startMSG[13];
-  char timestr[13];
+//	uint8_t startMSG[13];
+  /*char timestr[13];
 	sprintf(timestr, "%02d%02d%02d%02d%02d", Year % 100, Month, Day, Hour, Minute); 
 	startMSG[0]=CDM_start;
-	for (int i=0;i<11;i++){
+	for (int i=0;i<10;i++){
     startMSG[1+i] = uint8_t(timestr[i]);
   }
-
-  startMSG[12]=0;
-	spiTransfer2( startMSG, 12, CS_MSP430 );
+  startMSG[11]=0;
+  startMSG[12]=0;*/
+  
+  
+  // Serial.print("Timestring: ");
+  // Serial.println(timestr);
+  // Serial.print("Start message: ");
+  // for (int i=0;i<12;i++){
+    // Serial.printf("0x%02X.",startMSG[i]);
+  // }
+  // Serial.println("");
+  uint8_t startMSG[13] = {0x81, 0x32, 0x33, 0x30, 0x34, 0x32, 0x35, 0x31, 0x38, 0x31, 0x15, 0x00, 0x00};
+	spiTransfer2( &startMSG[0], 12, CS_MSP430 );
 
   
-  delay(1000)   ;  // Wait until microcontroller started the measurement
-	spiCommand8( CDM_status   , CS_MSP430 );
-  delay(2);
-	Serial.print("Sent start to Microcontroller");
-  statusMicro();
+  delay(500)   ;  // Wait until microcontroller started the measurement
+	uint8_t out2=spiCommand8( CDM_status   , CS_MSP430 );
+	Serial.print("Microcontroller status: ");
+  Serial.printf("%02X",out2);
+  Serial.println(" ");
+  // Parsing  response from microcontroller
+	MSP430_measuring = out & 0b00000001;
+  
 }
 
 void stopMicro(){ 
-    spiCommand8( CDM_stop  , CS_MSP430 );
-	  delay(500)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
-	  spiCommand8( CDM_status   , CS_MSP430 );
-    Serial.print("Send stop to Microcontroller!");
-    delay(2);
-    statusMicro();
+    uint8_t out=spiCommand8( CDM_stop  , CS_MSP430 );
+	  delay(1000)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
+	  uint8_t out2=spiCommand8( CDM_status , CS_MSP430 );
+	  
+    Serial.printf("Microcontroller status: %b",out2);
+    Serial.println(" ");
+    
+	  // Parsing  response from microcontroller
+	  
+	  Serial.print("Send stop to Microcontroller!");
 }
 
 void statusMicro(){   
-	  spiCommand8( CDM_status   , CS_MSP430 );
-    delay(2);
-    uint8_t out=spiCommand8( CDM_status_read   , CS_MSP430 );
-	  ParseStatus(out);
-}
-
-
-void ParseStatus(uint8_t out){   
-	  Serial.print("Microcontroller status: ");
-    Serial.printf("%02X",out);
-    Serial.println(" ");
+	  uint8_t out=spiCommand8( CDM_status   , CS_MSP430 );
 	  
 	  // Parsing  response from microcontroller
 	  MSP430_measuring = out & 0b00000001 ;
 	  
-    sprintf(txString2, "Micro stat: %02X", out);
-    Send_tx_String(txString2) ;
+	  Serial.printf("Microcontroller status: %b",out);
 }
-
 
 void resetMicro(){
   uint8_t out=spiCommand8( CDM_reset  , CS_MSP430 );
-	  Serial.print("Send reset to Microcontroller!");
 	  delay(1000)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
 	  uint8_t out2=spiCommand8( CDM_status , CS_MSP430 );
-	  delay(2);
-	  uint8_t out=spiCommand8( CDM_status_read   , CS_MSP430 );
-      Serial.printf("Micro stat: %02X",out2);
-	  Serial.println(" ");
+	  
+    Serial.printf("Microcontroller status: %b",out2);
+    Serial.println(" ");
     
 	  // Parsing  response from microcontroller
 	  
-	  
+	  Serial.print("Send reset to Microcontroller!");
 }
+
+
 
 
 // /////////////////////////////////////////////
@@ -268,29 +270,61 @@ void startMeasuring() {
   
   startMicro();	
 
+
+
   strcpy(txString, "Started measurement!");
   Serial.println(txString);
 }
 
 
+// /////////////////////////////////////////////
+// -%--------------------------------------------
+// Setup and loop
+// %%------------------------------------------------------------------------------------------------------------------------------
+void setup() {
+
+  Serial.begin(115200);
 
 
-// Stop data measuring process
-void stop_Measuring() {
-  measuring = false;  // Set flag to false
+
+  // Setup SPI connection
+  //--------------------
+  spi.begin(SCK, MISO, MOSI, CS_SD);  
+  Serial.println("Started SPI");
+  pinMode(CS_SD, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
+  digitalWrite(CS_SD, HIGH);
+  pinMode(CS_DAC, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
+  digitalWrite(CS_DAC, HIGH);
+  pinMode(CS_MSP430 , OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
+  digitalWrite(CS_MSP430 , HIGH);
+
+ 
   BLE_message = true;
-  stopMicro();
-                                                                                    
-  Serial.println("Measurement stopped successfully");
+  strcpy(txString, "Setup completeded. Waiting for command 'START' over Serial of BLE for starting measuring data!");
+ // Send_tx_String(txString);
+
 }
 
 
+void loop() {
 
-// /////////////////////////////////////////////
-// ---------------------------------------------
-// Input parsing functions    %toCheck
-// ---------------------------------------------
-// /////////////////////////////////////////////
+  if (Serial.available()) {  // Check Serial inputs
+    String rxValue = Serial.readString();
+    if (rxValue.length() > 0) {
+      Serial.println("*********");
+      Serial.print("Received Value: ");
+      for (int i = 0; i < rxValue.length(); i++)
+        Serial.print(rxValue[i]);
+        Serial.println();
+		parse(rxValue);
+      Serial.println("*********");
+    }
+  }
+
+
+  delay(50);
+}
+
 void parse( String rxValue){     //%toCheck
   //Start new data files if START is received and stop current data files if STOP is received
   BLE_message = true;
@@ -308,178 +342,22 @@ void parse( String rxValue){     //%toCheck
 	stop_Measuring();
   } else if (rxValue.indexOf("STATUS") != -1) {
 	statusMicro();
-	} else if(rxValue.indexOf("RESET") != -1){
+	
+  } else if(rxValue.indexOf("RESET") != -1){
     resetMicro();
   } else {
 	BLE_message = true;
-  +
+	strcpy(txString, "Input can not be parsed retry!");
+	Serial.println(txString);
+  }
 }
 
 
-	
-// /////////////////////////////////////////////
-// ---------------------------------------------
-// BLE funtions und code
-// ---------------------------------------------
-// /////////////////////////////////////////////
-
-class MyServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer *pServer) {
-    deviceConnected = true;
-  };
-
-  void onDisconnect(BLEServer *pServer) {
-    deviceConnected = false;
-  }
-};
-
-class MyCallbacks : public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-    std::string rxValue = pCharacteristic->getValue();
-
-    if (rxValue.length() > 0) {
-		String rxValue2=rxValue.c_str();
-		// for (int i = 0; i < rxValue.length(); i++)
-		// rxValue2 += rxValue[i];
-
-		Serial.println("*********");
-		Serial.println("Received Value: ");
-		Serial.println("*********");
-		BLE_message=true;
-		sprintf(subString,"BLE input: %s\n",rxValue2);
-		strcat(txString,subString);
-		parse(rxValue2);
-    }
-  }
-};
+void stop_Measuring() {
+  measuring = false;  // Set flag to false
 
 
-
-void setup_BLE() {
-  Serial.printf("bluetooth connection: %s \n",BLEname);
-  // Create the BLE Device
-  BLEDevice::init(BLEname);
-
-  // Create the BLE Server
-  pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
-
-  // Create the BLE Service
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-
-  // Create a BLE Characteristic
-  pTxCharacteristic = pService->createCharacteristic(
-    CHARACTERISTIC_UUID_TX,
-    BLECharacteristic::PROPERTY_NOTIFY);
-
-  pTxCharacteristic->addDescriptor(new BLE2902());
-
-  BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
-    CHARACTERISTIC_UUID_RX,
-    BLECharacteristic::PROPERTY_WRITE);
-
-  pRxCharacteristic->setCallbacks(new MyCallbacks());
-
-  // Start the service
-  pService->start();
-
-  // Start advertising
-  pServer->getAdvertising()->start();
-  Serial.println("Waiting a client connection to notify...");
-}
-
-// Send txSTring to BLE and Serial
-void Send_tx_String(char *txString) {
-  // strcat(txString,"\n");
-  Serial.print(txString);
-
-  if (deviceConnected) {
-    pTxCharacteristic->setValue(txString);
-    pTxCharacteristic->notify();
-    BLE_message = false;
-  }
-
-  strcpy(txString, "");
-}
-
-
-
-// /////////////////////////////////////////////
-// -%--------------------------------------------
-// Setup and loop
-// %%------------------------------------------------------------------------------------------------------------------------------
-void setup() {
-
-  Serial.begin(115200);
-
-
-
-
-  // Setup BLE connection
-  //--------------------
-  setup_BLE();
-
-  // Setup SPI connection
-  //--------------------
-  spi.begin(SCK, MISO, MOSI, CS_SD);  
-  Serial.println("Started SPI");
-  pinMode(CS_SD, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
-  digitalWrite(CS_SD, HIGH);
-  pinMode(CS_DAC, OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
-  digitalWrite(CS_DAC, HIGH);
-  pinMode(CS_MSP430 , OUTPUT); //set up slave select pins as outputs as the Arduino API doesn't handle automatically pulling SS low
-  digitalWrite(CS_MSP430 , HIGH);
-
- 
-  BLE_message = true;
-  strcpy(txString, "Setup completeded. Waiting for command 'START' over Serial of BLE for starting measuring data!");
-  Send_tx_String(txString);
-
-}
-
-
-void loop() {
-
-
-
-  //################################# Do other stuff #############################################
-
-  // Check BLE connection
-  if (deviceConnected && BLE_message) {
-    Serial.println("Sending BLE message");
-    pTxCharacteristic->setValue(txString);
-    pTxCharacteristic->notify();
-    BLE_message = false;
-    //delay(10); // bluetooth stack will go into congestion, if too many packets are sent
-  }
-  // disconnecting
-  if (!deviceConnected && oldDeviceConnected) {
-    //delay(500); // give the bluetooth stack the chance to get things ready
-    pServer->startAdvertising();  // restart advertising
-    Serial.println("start advertising");
-    oldDeviceConnected = deviceConnected;
-  }
-  // connecting
-  if (deviceConnected && !oldDeviceConnected) {
-    // do stuff here on connecting
-    oldDeviceConnected = deviceConnected;
-  }
-
-
-
-  if (Serial.available()) {  // Check Serial inputs
-    String rxValue = Serial.readString();
-    if (rxValue.length() > 0) {
-      Serial.println("*********");
-      Serial.print("Received Value: ");
-      for (int i = 0; i < rxValue.length(); i++)
-        Serial.print(rxValue[i]);
-        Serial.println();
-		parse(rxValue);
-      Serial.println("*********");
-    }
-  }
-
-
-  delay(50);
+  stopMicro();
+                                                                                    
+  Serial.println("Measurement stopped successfully");
 }

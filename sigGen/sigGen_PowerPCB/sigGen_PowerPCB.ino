@@ -99,8 +99,7 @@ uint16_t freqAdd;
 // uint64_t freq;
 uint16_t freqDat;
 float gain=0;
-uint16_t gainDAT = 0x1000;
-
+uint16_t gainDAT = 0x400;
 //-=-=-=-=-=-=-=-=-=-=-=-
 
 
@@ -146,15 +145,20 @@ void Send_tx_String(char *txString);
 
 
 //resonant frequencies:
+#define F1 720
+#define F2 1155
+#define F3 1920
+#define F4 6110
+#define F5 7037
+#define F6 8448
 
-#define F1 1061
-#define F2 2283
-#define F3 4618
-#define F4 8651
+#define F46 5130
+#define F456 4049
 
-uint64_t freqs[] ={F1,F2,F3,F4};
+
+uint64_t freqs[] ={F1,F2,F3,F456,F46,F4,F5,F6};
 uint64_t freq=F3;
-int Nfreq=4;  //Number of frequencies to use
+int Nfreq=8;  //Number of frequencies to use
 
 // states of CSwitch for each frequencz
 #define stateF1 0x80
@@ -163,14 +167,21 @@ int Nfreq=4;  //Number of frequencies to use
 #define stateF4 0x01
 #define stateF5 0x10
 #define stateF6 0x08
-uint8_t CSw_states[] ={stateF1,stateF2,stateF3,stateF4};
+
+uint8_t CSw_states[] ={stateF1,stateF2,stateF3,stateF4+stateF5+stateF6,stateF4+stateF6,stateF4,stateF5,stateF6};
 
 #define CALF1 1055
 #define CALF2 4744
 #define CALF3 8805
 int CAL_states[]={0,1,2,4};
 
-#define MAXGAIN 0x3000
+#define MAXGAIN 0x1800
+
+//-=-=-=-=-=-=-=-=-=-=-=-
+
+
+
+
 
 
 void testLong(){
