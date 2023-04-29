@@ -153,9 +153,9 @@ Adafruit_MCP9808 tempsens4 = Adafruit_MCP9808();
 #define  MA12070P_address 0x20
 #define  CSwitchTx_address 0x24
 #define  CSwitchCal_address 0x26
-#define  Temp1_address 0x18  // 000
-#define  Temp2_address 0x19  // 001
-#define  Temp3_address 0x1A  // 010
+#define  Temp1_address 0x18  // 000 ; Tx, Tail
+#define  Temp2_address 0x19  // 001 ;  Rx, Tip
+#define  Temp3_address 0x1A  // 010 ;  Battery
 #define  Temp4_address 0x1B  // 011
 
 
@@ -210,9 +210,8 @@ uint64_t AWG_clock_freq = 7372800; // 125000000;
 uint16_t freqAdd;
 uint16_t freqDat;
 float gain=0;
-uint16_t gainDAT = 0x400;
+uint16_t gainDAT = 0x1000;
 
-bool ADCstarted=0;  //flag checking if ADC responded to start command
 
 //resonant frequencies:
 #define F1 720
@@ -263,10 +262,28 @@ int CAL_state=0;
 # define CDM_stop 0x82
 # define CDM_status 0xFF
 # define CDM_status_read 0x00
+# define CDM_status_read32 0X00
 # define CDM_reset 0x84							 
 
-// status flags 
+// status commands
+#define TSTAT_CMD_OK        0x80
+#define TSTAT_CALIBRATING   0x08
+#define TSTAT_STARTING      0x04
+#define TSTAT_SD_ERR        0x02
+#define TSTAT_RUNNING       0x01
+
+
+// status flags Micro
+bool MSP430_CMD_OK =0;
+bool MSP430_CALIBRATING =0;
+bool MSP430_STARTING =0;
+bool MSP430_SD_ERR =0;
 bool MSP430_measuring =0;
+
+// other flags
+bool ADCstarted=0;  //flag checking if ADC responded to start command
+bool SD_mounted =0;
+bool SD_filecreated =0;
 
 
 
@@ -283,59 +300,89 @@ void startMicro(){
 	sprintf(timestr, "%02d%02d%02d%02d%02d", Year % 100, Month, Day, Hour, Minute); 
 	startMSG[0]=CDM_start;
 	for (int i=0;i<11;i++){
-    startMSG[1+i] = uint8_t(timestr[i]);
-  }
+		startMSG[1+i] = uint8_t(timestr[i]);
+		}
 
-  startMSG[12]=0;
+	startMSG[12]=0;
 	spiTransfer2( startMSG, 12, CS_MSP430 );
-
-  
-  delay(1000)   ;  // Wait until microcontroller started the measurement
-	spiCommand8( CDM_status   , CS_MSP430 );
-  delay(2);
-	Serial.print("Sent start to Microcontroller");
-  statusMicro();
 }
 
 void stopMicro(){ 
     spiCommand8( CDM_stop  , CS_MSP430 );
 	  delay(500)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
-	  spiCommand8( CDM_status   , CS_MSP430 );
-    Serial.print("Send stop to Microcontroller!");
-    delay(2);
-    statusMicro();
+	  // spiCommand8( CDM_status   , CS_MSP430 );
+    // Serial.print("Send stop to Microcontroller!");
+    // delay(2);
+    // statusMicro();
 }
 
-void statusMicro(){   
+uint32_t statusMicro(){   
+	spiCommand8( CDM_status   , CS_MSP430 );
+  delay(10);
+  spiCommand32( CDM_status_read32,  CS_MSP430);
+	delay(10);
+	spiCommand32( CDM_status_read32,  CS_MSP430);
+	delay(10);
+	return spiCommand32( CDM_status_read32,  CS_MSP430);
+}
+
+void statusMicro8(){   
 	  spiCommand8( CDM_status   , CS_MSP430 );
-    delay(2);
+    delay(1);
     uint8_t out=spiCommand8( CDM_status_read   , CS_MSP430 );
 	  ParseStatus(out);
 }
 
-
-void ParseStatus(uint8_t out){   
-	  Serial.print("Microcontroller status: ");
-    Serial.printf("%02X",out);
+void statusMicroLong(){   
+	  spiCommand8( CDM_status   , CS_MSP430 );
+    delay(10);
+    Serial.print("Send long STATUS request");
+    uint32_t out_long =spiCommand32( CDM_status_read32,  CS_MSP430);
+	  Serial.printf("%04X",out_long);
     Serial.println(" ");
+	  Serial.print("BIN: ");
+    Serial.println(out_long,BIN);
 	  
-	  // Parsing  response from microcontroller
-	  MSP430_measuring = out & 0b00000001 ;
-	  
-    sprintf(txString2, "Micro stat: %02X", out);
-    Send_tx_String(txString2) ;
+}
+
+
+
+void ParseStatus(uint8_t out){   	
+	// Parsing  response from microcontroller
+	if ((out& TSTAT_CMD_OK )==TSTAT_CMD_OK ){
+		MSP430_CMD_OK =1;
+		
+		if((out& TSTAT_RUNNING)==TSTAT_RUNNING){
+			MSP430_measuring = 1;
+		}else if((out& TSTAT_SD_ERR)==TSTAT_SD_ERR){
+			MSP430_SD_ERR = 1;
+			Serial.print("Microcontroller SD not running!");
+		}else if((out& TSTAT_CALIBRATING)==TSTAT_CALIBRATING){
+			MSP430_CALIBRATING = 1;
+			Serial.print("Microcontroller is calibrating!");
+		}else if((out& TSTAT_STARTING)==TSTAT_STARTING){
+			MSP430_STARTING = 1;
+			Serial.print("Microcontroller is starting!");
+		}
+
+	} else {
+		MSP430_CMD_OK =0;
+		MSP430_measuring  =0;
+    Serial.print("Microcontroller got wrong message");
+	}
+
 }
 
 
 void resetMicro(){
   spiCommand8( CDM_reset  , CS_MSP430 );
-	delay(1000)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
-	Serial.print("Send reset to Microcontroller!");
-	spiCommand8( CDM_status , CS_MSP430 );
-	delay(2);
-	uint8_t out=spiCommand8( CDM_status_read   , CS_MSP430 );
-    Serial.printf("Micro stat: %02X",out);
-    Serial.println(" ");
+	delay(500)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
+	// Serial.print("Send reset to Microcontroller!");
+	// spiCommand8( CDM_status , CS_MSP430 );
+	// delay(2);
+	// uint8_t out=spiCommand8( CDM_status_read   , CS_MSP430 );
+  //   Serial.printf("Micro stat: %02X",out);
+  //   Serial.println(" ");
 }
 
 
@@ -397,9 +444,12 @@ void run(){
   out=readReg(0x1E);
   Serial.print("New run mode:");
   Serial.println(out,BIN);
-  if (out!=0x0001){
+  if ((out & 0x3)!=0x03){
 	ADCstarted=0;
-	Serial.print("ADC didn't start correctly!");
+	Serial.print("DAC didn't start correctly!");
+  }else{
+	ADCstarted=1;  
+	Serial.print("DAC started correctly!");
   }
 }
 
@@ -407,8 +457,10 @@ void run2(){
   writeReg(0x1E,0x0001);
   trigger();
   out=readReg(0x1E);
-  if (out!=0x0001){
-	 ADCstarted=0;
+  if ((out & 0x3)!=0x03){
+	ADCstarted=0;
+  }else{
+	ADCstarted=1;  
   }
 }
 
@@ -619,10 +671,13 @@ uint8_t spiCommand8( uint8_t msg , int CS ) {
 }
 
 
-void spiTransfer( uint8_t msg[], uint32_t size, int CS ) {  
+void spiTransfer( uint8_t msg[], uint32_t size, int CS, uint8_t out[] ) {  
   spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
   digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
-  spi.transfer(msg,size);
+  for (int i=0; i<size; ++i){
+    out[i]=spi.transfer(msg[i]);    
+    // Serial.print(".");
+  }
   digitalWrite(CS, HIGH); //pull ss high to signify end of data transfer
   spi.endTransaction();
 }
@@ -1039,11 +1094,13 @@ void makeFiles(fs::FS &fs) {
   Serial.println(dataFileName);
   dataFile = fs.open(dataFileName, FILE_WRITE);
   if (!dataFile) {
-    Serial.println(F("Failed to create data file! Freezing..."));
+    Serial.println(F("Failed to create data file! "));
     Serial.println(dataFileName);
-    while (1)
-      ;
+    SD_filecreated=0;
+  } else{
+	SD_filecreated=1;
   }
+  
   delay(100);
   Write_header();
   delay(100);
@@ -1158,7 +1215,30 @@ void startMeasuring() {
   IMX5.write(asciiMessageformatted);  //send instruction for sending ASCII messages
 
   
-  startMicro();	
+  
+  //start Microcontroller data logger
+  //----------------------------------
+  resetMicro();
+  delay(200) ;
+  startMicro();	  
+  delay(4000)   ;  // Wait until microcontroller started the measurement
+  uint32_t out = statusMicro();
+  Serial.print("Microcontroller status: 0x");
+  Serial.printf("%02X, ",out);
+	Serial.print("BIN: ");
+  Serial.println(out,BIN);
+  ParseStatus( (out & 0xFF000000)>>24);
+
+  if(!MSP430_measuring){
+        strcpy(txString, "Measurement on Microcontroller not started!");
+    if (MSP430_SD_ERR){
+      strcat(txString, " SD not working");
+	  }
+    Serial.println(txString);  
+    // measuring = false;  
+    // return;
+  }
+  
 
   // Start DAC
   //-----------
@@ -1180,6 +1260,8 @@ void stop_Measuring(fs::FS &fs) {
   //Stop DAC
   stop_trigger();
   digitalWrite(PIN_MUTE , LOW);  // mute
+  
+  //Stop Micro
   delay(1000);
   stopMicro();
   
@@ -1259,18 +1341,26 @@ void parse( String rxValue){     //%toCheck
     return;
   }
   measuring = true;
-  startMeasuring();
+    startMeasuring();
   
   } else if (rxValue.indexOf("STOP") != -1) {
 	measuring = false;
-	stop_Measuring(SD);
+	  stop_Measuring(SD);
 	  
   } else if (rxValue.indexOf("STATUS") != -1) {
-	statusMicro();
-												   
-			   
+	  statusMicro();
+
+	} else if (rxValue.indexOf("STATLONG") != -1) {
+	  statusMicroLong();	
+
+	} else if (rxValue.indexOf("STRMICRO") != -1) {
+	  startMicro();	
+
+  } else if (rxValue.indexOf("STPMICRO") != -1) {
+	  stopMicro();	
+  		   
   } else if(rxValue.indexOf("RESET") != -1){
-    ESP.restart();
+   ESP.restart();
 	
   } else if(rxValue.indexOf("RESMICRO") != -1){
     resetMicro();
@@ -1692,6 +1782,7 @@ void setup() {
     Wire.write(0xff); // all ports off
     error = Wire.endTransmission();
     Serial.printf("endTransmission on CSwitch CalibCoil: %u\n", error);
+	
 
 if (!tempsens1.begin(Temp1_address)) {
     Serial.println("Couldn't Temperature sensor 1! Check your connections and verify the address is correct.");
@@ -1762,6 +1853,7 @@ if (!tempsens3.begin(Temp2_address)) {
       ;
   } else{
     Serial.println("SD mounted");
+	SD_mounted=1;
   }
 
   uint8_t cardType = SD.cardType();
