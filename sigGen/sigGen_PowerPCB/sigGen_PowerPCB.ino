@@ -180,10 +180,6 @@ int CAL_states[]={0,1,2,4};
 //-=-=-=-=-=-=-=-=-=-=-=-
 
 
-
-
-
-
 void testLong(){
 	delay(500);
 	strcpy(txString,"Starting long test");
@@ -265,35 +261,27 @@ void testCal(){
 	Send_tx_String(txString) ;
 	startMicro();   // start recording of ADC data for given duration in seconds
   digitalWrite(PIN_MUTE , LOW);  // mute
-  delay(1000);
+  delay(2000);
   digitalWrite(PIN_MUTE , HIGH);  // unmute
-  delay(1000);
+  delay(2000);
   digitalWrite(PIN_MUTE , LOW);  // mute
   
 	for (int i=0; i<Nfreq; ++i) {
 		freq=freqs[i];
 		configureSineWave();
-		// sprintf(subString,"f: %d",freq );
-    // strcat(txString,subString);
-    // setCswitchTx(CSw_states[i]);
-    // if(i==0){ 
-    //   digitalWrite(PIN_GPIOswitch , HIGH);
-    // }else{
-    //   digitalWrite(PIN_GPIOswitch , LOW);
-    // }
-    
+        run2();
+        trigger();
+		digitalWrite(PIN_MUTE , HIGH);  // unmute
+        delay(1000);
+		
 		for (int j=0; j<4; ++j) {
 			setCswitchCal(CAL_states[j]);
-      delay(10);
-			digitalWrite(PIN_MUTE , HIGH);  // unmute
-      run2();
-      trigger();
-      delay(1000);
-      // Pause for a tenth of a second between notes.
-      stop_trigger();
-      digitalWrite(PIN_MUTE , LOW);  // mute
-			delay(200);
+			delay(10);
+			delay(1000);
 		}
+		
+		stop_trigger();
+        digitalWrite(PIN_MUTE , LOW);  // mute
    }
    delay(1000);
    stopMicro();
@@ -470,8 +458,7 @@ void FsubSweep(int Df,int Delta){
         digitalWrite(PIN_MUTE , LOW);  // mute
         delay(50);
         Serial.print('.');
-		  }
-		
+		}
     delay(300);
     }
     Send_tx_String(txString);
@@ -479,6 +466,7 @@ void FsubSweep(int Df,int Delta){
 	  strcpy(txString,"End of sweep");
 	  Send_tx_String(txString) ;
 }
+
 
 // /////////////////////////////////////////////
 // ---------------------------------------------

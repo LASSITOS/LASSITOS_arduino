@@ -128,12 +128,12 @@ char asciiMessageformatted[128];
 int IMXrate=100;
 int IMUdataRate=16;
 
-long Year;
-long Month;
-long Day;
-long Hour;
-long Minute;
-long Second;
+long Year =2023;
+long Month =4;
+long Day =29;
+long Hour =13;
+long Minute = 20;
+long Second = 0;
 
 
 // --------------------------------
@@ -273,6 +273,8 @@ int CAL_state=0;
 #define TSTAT_RUNNING       0x01
 
 
+uint32_t status_out=0;
+
 // status flags Micro
 bool MSP430_CMD_OK =0;
 bool MSP430_CALIBRATING =0;
@@ -307,6 +309,24 @@ void startMicro(){
 	spiTransfer2( startMSG, 12, CS_MSP430 );
 }
 
+
+void startMicro2(){
+  Hour = random(23);
+  Minute = random(59);
+  Second = random(59);
+  printDateTime();
+  resetMicro();
+  delay(200) ;
+  startMicro();	  
+  delay(3000)   ;  // Wait until microcontroller started the measurement
+  status_out = statusMicro();
+  Serial.print("Microcontroller status: 0x");
+  Serial.printf("%02X, ",status_out);
+	Serial.print("BIN: ");
+  Serial.println(status_out,BIN);
+}
+
+
 void stopMicro(){ 
     spiCommand8( CDM_stop  , CS_MSP430 );
 	  delay(500)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
@@ -318,11 +338,9 @@ void stopMicro(){
 
 uint32_t statusMicro(){   
 	spiCommand8( CDM_status   , CS_MSP430 );
-  delay(10);
-  spiCommand32( CDM_status_read32,  CS_MSP430);
-	delay(10);
-	spiCommand32( CDM_status_read32,  CS_MSP430);
-	delay(10);
+	delay(2);
+	// Serial.printf("Status: %08X, ",spiCommand32( CDM_status_read32,  CS_MSP430));
+    // delay(2);
 	return spiCommand32( CDM_status_read32,  CS_MSP430);
 }
 
@@ -330,24 +348,29 @@ void statusMicro8(){
 	  spiCommand8( CDM_status   , CS_MSP430 );
     delay(1);
     uint8_t out=spiCommand8( CDM_status_read   , CS_MSP430 );
-	  ParseStatus(out);
+	  // ParseStatus(out);
+    Serial.printf("%04X",out);
+    Serial.println(" ");
+	  Serial.print("BIN: ");
+    Serial.println(out,BIN);
 }
 
 void statusMicroLong(){   
 	  spiCommand8( CDM_status   , CS_MSP430 );
     delay(10);
     Serial.print("Send long STATUS request");
-    uint32_t out_long =spiCommand32( CDM_status_read32,  CS_MSP430);
-	  Serial.printf("%04X",out_long);
+    status_out =spiCommand32( CDM_status_read32,  CS_MSP430);
+	  Serial.printf("%04X",status_out);
     Serial.println(" ");
 	  Serial.print("BIN: ");
-    Serial.println(out_long,BIN);
+    Serial.println(status_out,BIN);
 	  
 }
 
 
 
-void ParseStatus(uint8_t out){   	
+void ParseStatus(int out){   	
+  // Serial.print(out);
 	// Parsing  response from microcontroller
 	if ((out& TSTAT_CMD_OK )==TSTAT_CMD_OK ){
 		MSP430_CMD_OK =1;
@@ -394,6 +417,292 @@ void resetMicro(){
 // /////////////////////////////////////////////
 
 
+void testLong(){
+	delay(500);
+	strcpy(txString,"Starting long test");
+	Send_tx_String(txString) ;
+	startMicro2();   // start recording of ADC data for given duration in seconds
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  delay(5000);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  delay(1000);
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+	for (int i=0; i<Nfreq; ++i) {
+		freq=freqs[i];
+		configureSineWave();
+		// sprintf(subString,"f: %d",freq );
+    // strcat(txString,subString);
+		// Send_tx_String(txString); 
+    // if(i==0){ 
+    //   digitalWrite(PIN_GPIOswitch , HIGH);
+    // }else{
+    //   digitalWrite(PIN_GPIOswitch , LOW);
+    // }
+    setCswitchTx(CSw_states[i]);
+    delay(10);
+    digitalWrite(PIN_MUTE , HIGH);  // unmute
+    run2();
+    trigger();
+    delay(5000);
+    // Pause for a tenth of a second between notes.
+    stop_trigger();
+    digitalWrite(PIN_MUTE , LOW);  // mute
+    delay(200);
+		}
+   
+   delay(1000);
+   stopMicro();
+   delay(200);
+   strcpy(txString,"End of test");
+   Send_tx_String(txString) ;
+}
+
+
+
+void testLongSingle(int i, int len){
+	delay(500);
+	strcpy(txString,"Starting long test");
+	Send_tx_String(txString) ;
+	startMicro2();   // start recording of ADC data for given duration in seconds
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  delay(2000);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  delay(2000);
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+  freq=freqs[i];
+	configureSineWave();
+  setCswitchTx(CSw_states[i]);
+  delay(10);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  run2();
+  trigger();
+
+  delay(len);
+
+  stop_trigger();
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+  delay(1000);
+  stopMicro();
+  delay(200);
+  strcpy(txString,"End of test");
+  Send_tx_String(txString) ;
+}
+
+
+void testCal(){
+	delay(500);
+	strcpy(txString,"Starting cal test");
+	Send_tx_String(txString) ;
+	startMicro2();   // start recording of ADC data for given duration in seconds
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  delay(2000);
+  digitalWrite(PIN_MUTE , HIGH);  // unmute
+  delay(2000);
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+	for (int i=0; i<Nfreq; ++i) {
+		freq=freqs[i];
+		configureSineWave();
+        run2();
+        trigger();
+		digitalWrite(PIN_MUTE , HIGH);  // unmute
+        delay(1000);
+		
+		for (int j=0; j<4; ++j) {
+			setCswitchCal(CAL_states[j]);
+			delay(10);
+			delay(1000);
+		}
+		
+		stop_trigger();
+        digitalWrite(PIN_MUTE , LOW);  // mute
+   }
+   delay(1000);
+   stopMicro();
+   delay(200);
+   strcpy(txString,"End of test");
+   Send_tx_String(txString) ;
+}
+
+void frequencySweep(int start,int stp,int Delta){
+	  int A=start/Delta;
+	  int B=stp/Delta;
+	  delay(500);
+	  strcpy(txString,"Starting frequency sweep");
+	  Send_tx_String(txString) ;
+	  startMicro2();   // start recording of ADC data for given duration in seconds
+	  delay(2000);
+    digitalWrite(PIN_MUTE , HIGH);  // unmute
+    
+	  for (int i=A; i<B; ++i) {
+		  // Play the note for a quarter of a second.
+		  freq=i*Delta;
+		  configureSineWave();
+		  // sprintf(subString,"f: %d",freq );
+      // strcat(txString,subString);
+		  digitalWrite(PIN_MUTE , HIGH);  // unmute
+		  // run();
+      run2();
+      trigger();
+		  delay(200);
+		  // Pause for a tenth of a second between notes.
+		  stop_trigger();
+		  digitalWrite(PIN_MUTE , LOW);  // mute
+		  delay(50);
+	  }
+    Send_tx_String(txString);
+    delay(1000);
+    stopMicro();
+	  strcpy(txString,"End of sweep");
+	  Send_tx_String(txString) ;
+}	  
+
+void GainSweep(int start,int stp,int Delta){
+
+    if(stp>MAXGAIN){
+      sprintf(txString,"Stop gain is larger then maximum gain: %04X",MAXGAIN );
+      Serial.print("STOP");
+      Serial.println(stp);
+      Serial.print("Maxgain");
+      Serial.println(MAXGAIN);
+      Send_tx_String(txString) ;
+      return;
+      }
+    
+	  int A=start/Delta;
+	  int B=stp/Delta;
+    // Serial.print("A");
+    // Serial.println(A);
+    // Serial.print("B");
+    // Serial.println(B);
+	  
+	  delay(500);
+	  strcpy(txString,"Starting gain sweep");
+	  Send_tx_String(txString) ;
+	  startMicro2();   // start recording of ADC data for given duration in seconds
+	  delay(2000);
+      
+      
+	  for (int j=0; j<Nfreq; ++j) {
+		  freq=freqs[j];
+		  configureSineWave();
+		  // sprintf(subString,"f: %d",freq );
+      // strcat(txString,subString);
+      setCswitchTx(CSw_states[j]);
+      // if(j==0){ 
+      //   digitalWrite(PIN_GPIOswitch , HIGH);
+      //   delay(10);
+      // }else{
+      //   digitalWrite(PIN_GPIOswitch , LOW);
+      //   delay(10);
+      // }
+
+      
+		  for (int i=A; i<B; ++i) {
+			  // Play the note for a quarter of a second.
+			  setGain2(i*Delta);
+			  // sprintf(txString,",g: %d",gainDAT ); 
+			  digitalWrite(PIN_MUTE , HIGH);  // unmute
+			  run2();
+			  trigger();
+			  delay(200);
+			  // Pause for a tenth of a second between notes.
+			  stop_trigger();
+			  digitalWrite(PIN_MUTE , LOW);  // mute
+			  delay(50);
+		  }
+		delay(1000);
+    }
+    Send_tx_String(txString);
+    stopMicro();
+	  strcpy(txString,"End of sweep");
+	  Send_tx_String(txString) ;
+}
+
+
+void GainSweep2(int start,int stp,int Delta){
+  // Same as GainSweep but don't go over different frequencies!
+
+    if(stp>MAXGAIN){
+      sprintf(txString,"Stop gain is larger then maximum gain: %04X",MAXGAIN );
+      Serial.print("STOP");
+      Serial.println(stp);
+      Serial.print("Maxgain");
+      Serial.println(MAXGAIN);
+      Send_tx_String(txString) ;
+      return;
+      }
+    
+	  int A=start/Delta;
+	  int B=stp/Delta;
+	  
+	  delay(500);
+	  strcpy(txString,"Starting gain sweep V2");
+	  Send_tx_String(txString) ;
+	  startMicro2();   // start recording of ADC data for given duration in seconds
+	  delay(2000);      
+		  for (int i=A; i<B; ++i) {
+			  // Play the note for a quarter of a second.
+			  setGain2(i*Delta);
+			  // sprintf(txString,",g: %d",gainDAT ); 
+			  digitalWrite(PIN_MUTE , HIGH);  // unmute
+			  run2();
+			  trigger();
+			  delay(1000);
+			  // Pause for a tenth of a second between notes.
+			  stop_trigger();
+			  digitalWrite(PIN_MUTE , LOW);  // mute
+			  delay(100);
+		  }
+		delay(1000);
+    Send_tx_String(txString);
+    stopMicro();
+	  strcpy(txString,"End of sweep");
+	  Send_tx_String(txString) ;
+}
+
+void FsubSweep(int Df,int Delta){
+	  delay(200);
+	  strcpy(txString,"Starting f sweep around res. freqs.");
+	  Send_tx_String(txString) ;
+	  startMicro2();   // start recording of ADC data for given duration in seconds
+	  delay(1000);
+
+	  for (int j=0; j<Nfreq; ++j) {
+		  int mainfreq=freqs[j];
+		  int start=mainfreq-Df;
+      int stop=mainfreq+Df;
+      int A=start/Delta;
+	    int B=stop/Delta;
+      Serial.print("Main freq:");
+      Serial.println(mainfreq);
+    
+      for (int i=A; i<B+1; ++i) {
+        freq=i*Delta;
+        configureSineWave();
+        setCswitchTx(CSw_states[j]);
+        sprintf(subString,"f: %d",freq );
+        // strcat(txString,subString);
+        Serial.print(subString);
+        digitalWrite(PIN_MUTE , HIGH);  // unmute
+        run2();
+        trigger();
+        delay(500);
+        stop_trigger();
+        digitalWrite(PIN_MUTE , LOW);  // mute
+        delay(50);
+        Serial.print('.');
+		}
+    delay(300);
+    }
+    Send_tx_String(txString);
+    stopMicro();
+	  strcpy(txString,"End of sweep");
+	  Send_tx_String(txString) ;
+}
 
 
 
@@ -647,10 +956,10 @@ void scanI2C (){
 // ---------------------------------------------
 // SPI functions
 // ---------------------------------------------
-// /////////////////////////////////////////////
-
+// ///////////////////////////////////////////
+uint8_t mode = SPI_MODE0;
 uint32_t spiCommand32( uint32_t msg , int CS ) {  
-  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
+  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, mode));
   digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
   uint32_t out= spi.transfer32(msg);
   digitalWrite(CS, HIGH); //pull ss high to signify end of data transfer
@@ -661,7 +970,7 @@ uint32_t spiCommand32( uint32_t msg , int CS ) {
 
 
 uint8_t spiCommand8( uint8_t msg , int CS ) {  
-  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
+  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, mode));
   digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
   uint8_t out= spi.transfer(msg);
   digitalWrite(CS, HIGH); //pull ss high to signify end of data transfer
@@ -672,7 +981,7 @@ uint8_t spiCommand8( uint8_t msg , int CS ) {
 
 
 void spiTransfer( uint8_t msg[], uint32_t size, int CS, uint8_t out[] ) {  
-  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
+  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, mode));
   digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
   for (int i=0; i<size; ++i){
     out[i]=spi.transfer(msg[i]);    
@@ -685,7 +994,7 @@ void spiTransfer( uint8_t msg[], uint32_t size, int CS, uint8_t out[] ) {
 
 void spiTransfer2( uint8_t msg[], uint32_t size, int CS ) {  
   // Serial.print("start transfer");
-  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, SPI_MODE0));
+  spi.beginTransaction(SPISettings(SPI_rate, MSBFIRST, mode));
   digitalWrite(CS, LOW); //pull SS slow to prep other end for transfer
   for (int i=0; i<size; ++i){
     spi.transfer(msg[i]);    
@@ -858,8 +1167,8 @@ int parseDateTime(String GPDZA) {
     Month = 01;
     Day = 01;
     Hour = random(23);
-    Minute = random(60);
-    Second = random(60);
+    Minute = random(59);
+    Second = random(59);
     return 0;
   }
 }
@@ -1222,15 +1531,17 @@ void startMeasuring() {
   delay(200) ;
   startMicro();	  
   delay(4000)   ;  // Wait until microcontroller started the measurement
-  uint32_t out = statusMicro();
-  Serial.print("Microcontroller status: 0x");
-  Serial.printf("%02X, ",out);
-	Serial.print("BIN: ");
-  Serial.println(out,BIN);
-  ParseStatus( (out & 0xFF000000)>>24);
-
+  status_out = statusMicro();
+  Serial.print("\r\nMicrocontroller status: 0x");
+  Serial.printf("%08X, ",status_out);
+	// Serial.print("BIN: ");
+  // Serial.println(status_out,BIN);
+  sprintf(subString,"\r\nStatus Micro: 0x%08X, ",status_out);
+  strcat(txString, subString);
+  
+  ParseStatus( (status_out & 0xFFF00000)>>20);
   if(!MSP430_measuring){
-        strcpy(txString, "Measurement on Microcontroller not started!");
+        strcat(txString, "\r\nMeasurement on Microcontroller not started!");
     if (MSP430_SD_ERR){
       strcat(txString, " SD not working");
 	  }
@@ -1244,8 +1555,9 @@ void startMeasuring() {
   //-----------
   run();
 
-  strcpy(txString, "Started measurement!");
+  strcat(txString, "\r\nStarted measurement!");
   Serial.println(txString);
+  BLE_message = true; //Send_tx_String(txString);
 }
 
 
@@ -1348,7 +1660,7 @@ void parse( String rxValue){     //%toCheck
 	  stop_Measuring(SD);
 	  
   } else if (rxValue.indexOf("STATUS") != -1) {
-	  statusMicro();
+	  statusMicro8();
 
 	} else if (rxValue.indexOf("STATLONG") != -1) {
 	  statusMicroLong();	
@@ -1365,7 +1677,100 @@ void parse( String rxValue){     //%toCheck
   } else if(rxValue.indexOf("RESMICRO") != -1){
     resetMicro();
   
-	
+  } else if (rxValue.indexOf("TESTCAL") != -1 or rxValue.indexOf("testcal") != -1) { 
+    testCal();
+
+  } else if (rxValue.indexOf("TESTLONG") != -1 or rxValue.indexOf("testlong") != -1) { 
+    Serial.println("Starting long test");
+    testLong();
+
+  } else if (rxValue.indexOf("LONGSINGLE") != -1 ) { 
+    Serial.println("Starting long test single freqency");
+    int index = rxValue.indexOf(":");
+    int index2 = rxValue.indexOf(":",index+1);
+	  int index3 = rxValue.indexOf(":",index2+1);
+    if (index !=-1 and index2 !=-1 and index3 !=-1 ){
+		  int i=rxValue.substring(index+1,index2).toInt();
+	    int len=rxValue.substring(index2+1,index3).toInt();
+		  Serial.print("Frequency index:");
+      Serial.println(i);
+      Serial.print("Measuring lenght (s):");
+      Serial.println(len);
+      testLongSingle(i,len*1000);
+	  } else {
+      sprintf(txString,"Frequency index and measuring lenght could not be parsed from: '%s''",rxValue);
+      Serial.println(txString);
+	  }
+  } else if (rxValue.indexOf("FSUBSWEEP") != -1 or rxValue.indexOf("fsubsweep") != -1) { 
+    Serial.println("Got freq sub sweep command");
+    int index = rxValue.indexOf(":");
+    int index2 = rxValue.indexOf(":",index+1);
+	  int index3 = rxValue.indexOf(":",index2+1);
+    if (index !=-1 and index2 !=-1 and index3 !=-1 ){
+		  int Df=rxValue.substring(index+1,index2).toInt();
+	    int delta=rxValue.substring(index2+1,index3).toInt();
+		  Serial.print("F range");
+      Serial.println(Df);
+      Serial.print("Delta");
+      Serial.println(delta);
+		  FsubSweep(Df,delta);
+	  } else {
+      sprintf(txString,"Frequency range and delta can not be parsed form string: '%s''",rxValue);
+      Serial.println(txString);
+	  }
+  } else if (rxValue.indexOf("FSWEEP") != -1 or rxValue.indexOf("fsweep") != -1) { 
+    Serial.println("Got freq sweep command");
+    int index = rxValue.indexOf(":");
+    int index2 = rxValue.indexOf(":",index+1);
+	  int index3 = rxValue.indexOf(":",index2+1);
+	  int index4 = rxValue.indexOf(":",index3+1);
+    if (index !=-1 and index2 !=-1 and index3 !=-1 and index4 !=-1){
+		  int A=rxValue.substring(index+1,index2).toInt();
+	    int B=rxValue.substring(index2+1,index3).toInt();
+	    int delta=rxValue.substring(index3+1,index4).toInt();
+		  Serial.print("START");
+      Serial.println(A);
+      Serial.print("STOP");
+      Serial.println(B);
+      Serial.print("Delta");
+      Serial.println(delta);
+		  frequencySweep(A,B,delta);
+	  } else {
+      sprintf(txString,"Start, Stop and delta can not be parsed form string: '%s''",rxValue);
+      Serial.println(txString);
+	  }
+  } else if (rxValue.indexOf("GSWEEP") != -1 or rxValue.indexOf("gsweep") != -1) { 
+    Serial.println("Got gain sweep command"); 
+    int index = rxValue.indexOf(":");\
+    int index2 = rxValue.indexOf(":",index+1);
+	  int index3 = rxValue.indexOf(":",index2+1);
+	  int index4 = rxValue.indexOf(":",index3+1);
+    if (index !=-1 and index2 !=-1 and index3 !=-1 and index4 !=-1){
+		  rxValue.substring(index+1,index2).toCharArray(datStr ,index2-index+1);
+      int A=strtoul (datStr, NULL, 16);
+	    rxValue.substring(index2+1,index3).toCharArray(datStr ,index3-index2+1);
+      int B= strtoul (datStr, NULL, 16);
+	    rxValue.substring(index3+1,index4).toCharArray(datStr ,index4-index3+1);
+      int delta=strtoul (datStr, NULL, 16);
+		  Serial.print("START");
+      Serial.println(A);
+      Serial.print("STOP");
+      Serial.println(B);
+      Serial.print("Delta");
+      Serial.println(delta);
+      if (rxValue.substring(index-1,index)=="2"){
+        GainSweep2(A,B,delta);
+      } else{
+        GainSweep(A,B,delta);
+      }
+		  
+    } else {
+      sprintf(txString,"Start, Stop and delta can not be parsed form string: '%s''",rxValue);
+      Serial.println(txString);
+    }  
+  
+  
+  
   } else if (rxValue.indexOf("READ") != -1) {
 	readFiles(rxValue);
   } else if (rxValue.indexOf("LIST") != -1) {
@@ -1656,8 +2061,25 @@ void commands() {
   strcat(txString, "STOP  Stops measurement \nSTART Starts new measurement  \n" );
   strcat(txString, "CHECKLASER  Get Laser data for 1 second and send it over BLE and serial \n" );
   strcat(txString, "COMS  List commands \n");
-  strcat(txString, "CHECKIMU  Get IMU data and send them over BLE+serial for manual check \n");
-  
+  strcat(txString, "CHECKINS  Get INS data and send them over BLE+serial for manual check \n");
+  strcat(txString, "RESET  Reset ESP32 \n");
+  strcat(txString, "RESMICRO  Reset MSP430 \n");
+  strcat(txString, "STATUS  Reset MSP430 \n");
+  strcat(txString, "STATLONG  Reset MSP430 \n");
+  Send_tx_String(txString);
+  delay(100);
+  strcat(txString, "STRMICRO,STPMICRO  Start,Stop data logging on MSP430 \n");
+  strcat(txString, "SETRESFREQ  Set resonant frequuency for measurements \n");
+  strcat(txString, "SETFREQ  Set frequuency of signal generator (Do not set the right resonant capacitor) \n");
+  strcat(txString, "SETGAIN2  Set digital gain DAC and signal strength\n");
+  strcat(txString, "FSUBSWEEP:range:step:  sweep around each resonatn frequency \n");
+  strcat(txString, "FSWEEP:range:step:  sweep  frequency \n");
+  strcat(txString, "TEMP  get temperature \n");
+  strcat(txString, "TEMP  get temperature \n");
+  strcat(txString, "SCANI2C  Reset MSP430 \n");
+  strcat(txString, "VBAT  get battery voltage\n");
+  strcat(txString, "TEMP  get temperature \n");
+
   strcat(txString, "# --------------------------------------\n");
   Send_tx_String(txString);
   delay(100);
@@ -2009,8 +2431,8 @@ void loop() {
       // long time=millis();
       logTemp(tempsens1,1);
       logTemp(tempsens2,2);
-	  logTemp(tempsens3,3);
-	  logTemp(tempsens4,4);
+	    logTemp(tempsens3,3);
+	    logTemp(tempsens4,4);
       // Serial.printf("Time: %d ms", millis()-time);
       // for  (int i = 0; i < N_TempSens; i++) {
       //     Serial.printf("Reading Sensor: %d", i);
@@ -2038,11 +2460,12 @@ void loop() {
 
   // Check BLE connection
   if (deviceConnected && BLE_message) {
-    Serial.println("Sending BLE message");
+    // Serial.println("Sending BLE message");
     pTxCharacteristic->setValue(txString);
     pTxCharacteristic->notify();
     BLE_message = false;
-    //delay(10); // bluetooth stack will go into congestion, if too many packets are sent
+    strcpy(txString, "");
+    delay(10); // bluetooth stack will go into congestion, if too many packets are sent
   }
   // disconnecting
   if (!deviceConnected && oldDeviceConnected) {
