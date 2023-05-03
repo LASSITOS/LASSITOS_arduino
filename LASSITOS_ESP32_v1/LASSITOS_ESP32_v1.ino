@@ -36,7 +36,7 @@ long logTime_laser;
 long logTime_IMX5;
 long lastTime_VBat; 
 long lastTime_Temp; 
-
+long lastTime_CAL =0;
 
 // settings PIN SPI 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -214,15 +214,15 @@ uint16_t gainDAT = 0x1000;
 
 
 //resonant frequencies:
-#define F1 720
-#define F2 1155
-#define F3 1920
-#define F4 6110
-#define F5 7037
-#define F6 8448
+#define F1 684
+#define F2 1079
+#define F3 1908
+#define F4 5754
+#define F5 6848
+#define F6 8207
 
-#define F46 5130
-#define F456 4049
+#define F46 4725
+#define F456 3900
 
 
 uint64_t freqs[] ={F1,F2,F3,F456,F46,F4,F5,F6};
@@ -246,6 +246,11 @@ uint8_t CSw_state=CSw_states[ifreq];
 #define CALF3 8805
 int CAL_states[]={0,1,2,4};
 int CAL_state=0;
+int N_cal=4;
+bool calibrating=0;
+bool cal_on=0;
+int  CAL_intervall_on=5000;
+int  CAL_intervall_off=1000;
 
 #define MAXGAIN 0x1800
 
@@ -370,7 +375,7 @@ void statusMicroLong(){
 
 
 void ParseStatus(int out){   	
-  // Serial.print(out);
+  Serial.print(out);
 	// Parsing  response from microcontroller
 	if ((out& TSTAT_CMD_OK )==TSTAT_CMD_OK ){
 		MSP430_CMD_OK =1;
@@ -400,7 +405,7 @@ void ParseStatus(int out){
 void resetMicro(){
   spiCommand8( CDM_reset  , CS_MSP430 );
 	delay(500)   ;  // Check that this is enought time fot the microcontroller stopping the measurements
-	// Serial.print("Send reset to Microcontroller!");
+	Serial.print("Send reset to Microcontroller!");
 	// spiCommand8( CDM_status , CS_MSP430 );
 	// delay(2);
 	// uint8_t out=spiCommand8( CDM_status_read   , CS_MSP430 );
@@ -444,7 +449,7 @@ void testLong(){
     digitalWrite(PIN_MUTE , HIGH);  // unmute
     run2();
     trigger();
-    delay(5000);
+    delay(2000);
     // Pause for a tenth of a second between notes.
     stop_trigger();
     digitalWrite(PIN_MUTE , LOW);  // mute
@@ -527,6 +532,24 @@ void testCal(){
    Send_tx_String(txString) ;
 }
 
+
+
+
+void CalInFlight(){
+	delay(500);
+	strcpy(txString,"Starting cal test");
+	Send_tx_String(txString) ;
+  
+	for (int j=0; j<4; ++j) {
+			setCswitchCal(CAL_states[j]);
+			delay(5000);
+		}
+
+   strcpy(txString,"End of calibration");
+   Send_tx_String(txString) ;
+}
+
+
 void frequencySweep(int start,int stp,int Delta){
 	  int A=start/Delta;
 	  int B=stp/Delta;
@@ -608,11 +631,11 @@ void GainSweep(int start,int stp,int Delta){
 			  digitalWrite(PIN_MUTE , HIGH);  // unmute
 			  run2();
 			  trigger();
-			  delay(200);
+			  delay(5000);
 			  // Pause for a tenth of a second between notes.
 			  stop_trigger();
 			  digitalWrite(PIN_MUTE , LOW);  // mute
-			  delay(50);
+			  delay(200);
 		  }
 		delay(1000);
     }
@@ -1087,7 +1110,7 @@ void setupINS() {
 
 void getDateTime() {
   char msgOut[256];
-  char msgStart[] = "$ASCB,0,,,,,,,,,,,200,";
+  char msgStart[] = "$ASCB,0,,,,,,,,,,,12,";
   FormatAsciiMessage(msgStart, sizeof(msgStart), msgOut);
   int out = 0;
   String msg = "NotValidMessage";
@@ -1105,6 +1128,8 @@ void getDateTime() {
       IMX5.readBytes(tempBuffer, bitesToWrite);
       String msg = (char*)tempBuffer;
       // Serial.println(msg);
+      msg[bitesToWrite]='\0';
+      Serial.printf("BitestoWrite: %d",bitesToWrite);
       out = parseDateTime(msg);
     }
     if (millis() - lastTime > 5000) {
@@ -1113,7 +1138,7 @@ void getDateTime() {
       out = parseDateTime("NotAValidMessage");
       out = 1;
     }
-    delay(50);
+    delay(10);
   }
   IMX5.write("$STPC*14\r\n");
   char msgStop[] = "$ASCB,0,,,,,,,,,,,0,";
@@ -1130,7 +1155,7 @@ int parseDateTime(String GPDZA) {
   //$GPZDA,001924,06,01,1980,00,00*41\r\n
   //$GPZDA,032521,08,02,2023,00,00*46   
   int a=GPDZA.indexOf("$GPZDA");
-  int b=GPDZA.indexOf("*");
+  int b=GPDZA.indexOf("*",a+1);
   if (a != -1 and b!= -1 and a<b ) {
     Serial.print("Valid msg:");
     Serial.println(GPDZA.substring(a, b+3));
@@ -1169,6 +1194,10 @@ int parseDateTime(String GPDZA) {
     Hour = random(23);
     Minute = random(59);
     Second = random(59);
+
+    Serial.print("Msg not valid:");
+    Serial.println(GPDZA);
+    
     return 0;
   }
 }
@@ -1632,8 +1661,9 @@ void stop_Measuring(fs::FS &fs) {
   delay(25);
   Write_stop();
   dataFile.close();  // Close the data file
-  Serial.println("Datafile closed.");                                                                                   
-  Serial.println("Measurement stopped successfully");
+  // Serial.println("Datafile closed.");                     
+  strcat(txString, "Measurement stopped successfully");
+  BLE_message = true; //Send_tx_String(txString);
 }
 
 
@@ -1677,6 +1707,9 @@ void parse( String rxValue){     //%toCheck
   } else if(rxValue.indexOf("RESMICRO") != -1){
     resetMicro();
   
+  } else if (rxValue.indexOf("CAL") != -1 or rxValue.indexOf("cal") != -1) { 
+    calibrating=1;
+
   } else if (rxValue.indexOf("TESTCAL") != -1 or rxValue.indexOf("testcal") != -1) { 
     testCal();
 
@@ -1763,11 +1796,44 @@ void parse( String rxValue){     //%toCheck
       } else{
         GainSweep(A,B,delta);
       }
-		  
-    } else {
+      } else {
       sprintf(txString,"Start, Stop and delta can not be parsed form string: '%s''",rxValue);
       Serial.println(txString);
-    }  
+    } 
+		  
+      }else if (rxValue.indexOf("SETTSW") != -1) {
+	
+    Serial.println("Setting new state for Tx CSwitch.");
+      int index = rxValue.indexOf(":");
+      int index2 = rxValue.indexOf(":",index+1);
+      if (index !=-1 and index2 !=-1){
+        rxValue.substring(index+1,index2).toCharArray(addrStr,5);
+        CSwitch=strtoul (addrStr, NULL, 16);
+        setCswitchTx (CSwitch);
+
+      } else {
+        sprintf(txString,"CSwitch state can not be parsed from string '%s''",rxValue);
+        Serial.println(txString);
+      }
+
+  
+    // Set CalibCoil CSwitch over I2C
+	  }else if (rxValue.indexOf("SETCSW") != -1) {
+	 
+	  Serial.println("Setting new state for calibration coil CSwitch.");
+		int index = rxValue.indexOf(":");\
+		int index2 = rxValue.indexOf(":",index+1);
+		if (index !=-1 and index2 !=-1){
+		  rxValue.substring(index+1,index2).toCharArray(addrStr,5);
+		  CSwitch=strtoul (addrStr, NULL, 16);
+		  setCswitchCal (CSwitch);
+
+		} else {
+		  sprintf(txString,"CSwitch state can not be parsed from string '%s''",rxValue);
+		  Serial.println(txString);
+		}
+	
+	 
   
   
   
@@ -2206,22 +2272,25 @@ void setup() {
     Serial.printf("endTransmission on CSwitch CalibCoil: %u\n", error);
 	
 
-if (!tempsens1.begin(Temp1_address)) {
-    Serial.println("Couldn't Temperature sensor 1! Check your connections and verify the address is correct.");
-  }	
-if (!tempsens2.begin(Temp2_address)) {
-    Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
-  }
-if (!tempsens3.begin(Temp2_address)) {
-    Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
-  }
-  if (!tempsens4.begin(Temp2_address)) {
-    Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
-  }
-  
+	if (!tempsens1.begin(Temp1_address)) {
+		Serial.println("Couldn't Temperature sensor 1! Check your connections and verify the address is correct.");
+	  }	
+	if (!tempsens2.begin(Temp2_address)) {
+		Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
+	  }
+	if (!tempsens3.begin(Temp3_address)) {
+		Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
+	  }
+	  if (!tempsens4.begin(Temp4_address)) {
+		Serial.println("Couldn't Temperature sensor 2! Check your connections and verify the address is correct.");
+	  }
+	  
   
 	//enable MA12070 to be allow to acces registers
 	digitalWrite(PIN_EN , LOW);
+	write_I2C (MA12070P_address , 0x1D, 0x01 ); // use power mode BBB
+	write_I2C (MA12070P_address , 0x25, 0x00 ); // low gain better SignaltoNoise
+	
 
   // Setup RS232 connection to Laser
   //--------------------
@@ -2432,7 +2501,7 @@ void loop() {
       logTemp(tempsens1,1);
       logTemp(tempsens2,2);
 	    logTemp(tempsens3,3);
-	    logTemp(tempsens4,4);
+	    // logTemp(tempsens4,4);
       // Serial.printf("Time: %d ms", millis()-time);
       // for  (int i = 0; i < N_TempSens; i++) {
       //     Serial.printf("Reading Sensor: %d", i);
@@ -2450,6 +2519,43 @@ void loop() {
       // lastTime_STROBE = millis(); 
     // }
 	
+
+	// Execute calibration if necessary
+    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    if (calibrating){
+      
+      if (cal_on & (lastTime_CAL + CAL_intervall_on < millis())) {
+        lastTime_CAL = millis(); 
+        cal_on=0;
+        setCswitchCal(0);
+        int msglen=7;
+        writeToBuffer((uint8_t*)"CalOff\n", msglen);
+        if (CAL_state==N_cal){
+          calibrating=0;
+          strcpy(txString,"End of calibration");
+	        Send_tx_String(txString) ;
+        }
+        
+      } else if(!cal_on & (lastTime_CAL + CAL_intervall_off < millis())){
+        lastTime_CAL = millis(); 
+        cal_on=1;
+        CAL_state++;
+        setCswitchCal(CAL_states[CAL_state]);
+        
+        sprintf(subString,"CalOn %1d\n",CAL_states[CAL_state] );
+        int msglen=8;
+        for (int i = 0; i < msglen; i++){
+          tempBuffer[i] = uint8_t(subString[i]);
+        } 
+        writeToBuffer(tempBuffer, msglen);
+        
+        sprintf(subString,"Set cal switch to: %1d",CAL_states[CAL_state] );
+        strcpy(txString,subString);
+	      Send_tx_String(txString) ;
+        
+      }
+    }
+
   } else {
     delay(50);  // wait 50 ms if not measuring
   }
