@@ -3,21 +3,21 @@ import csv
 import sys
 
 
-def main(path='./',file='',justheader=0):  # Read the first sector of the first disk as example.
-    """Demo usage of function."""
+def main(path='./',file='',start=2, length=3):  # Read the first sector of the first disk as example.
+    """file name of file where data are going to be saved. start=start sector, stop=stop sector"""
     args = sys.argv[1:]
     if len(args) == 2 and args[0] == '-file':
         file=args[1]
     if os.name == "nt":
         # Windows based OS normally uses '\\.\physicaldriveX' for disk drive identification.
-        read_sector(r"\\.\physicaldrive1",0,path=path,file=file,justheader=justheader)
+        read_sector(r"\\.\physicaldrive1",0,path=path,file=file,start=start,length=length)
         print('done')
     else:
         # Linux based OS normally uses '/dev/diskX' for disk drive identification.
-        print(read_sector("/dev/disk0"),path=path)
+        print('use windows')
 
 
-def read_sector(disk, sector_no=0,path='./',file='',justheader=0):
+def read_sector(disk, sector_no=0,path='./',file='',start=2,length=1):
     """Read a single sector of the specified disk.
     Keyword arguments:
     disk -- the physical ID of the disk to read.
@@ -37,19 +37,26 @@ def read_sector(disk, sector_no=0,path='./',file='',justheader=0):
         read = fp.read(4)
         SD_Size = int.from_bytes(read,"little")
 
-        print('start address = ' + str(sAddress))
+        print('header start address = ' + str(sAddress))
         print('ADC size = ' + str(ADC_Size))
-        print('SD frames = ' + str(SD_Size))
+        print('header SD frames = ' + str(SD_Size))
         print('File Name = ' + str(fName))
+        print('manualstart address = ' + str(start))
+        print('manualSD frames = ' + str(length))
+        SD_Size=int(length)
+        sAddress=int(start)
+        
+        
         if file=='':
             file=path+'ADC'+str(fName[:6])+'_'+str(fName[6:])+'.csv'
         else:
             file=path+file
         print('File path = ' + file)
+        
+        
+        
         fp.seek(sAddress * 512)
         #read = fp.read(16)
-        if justheader:
-            return None
         
         
         with open(file, 'w', encoding='UTF8', newline='') as f:

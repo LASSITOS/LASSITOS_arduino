@@ -38,17 +38,19 @@ class MSG_type:
             print(keys)
             
             return
-    
+        self.keys=keys.copy()
         for i,k in enumerate(keys):
             setattr(self,k,np.array([l[i] for l in values]))
+
+_MSG_list_=['Laser','PINS1','PSTRB','PINS2']    # NMEA message list to parse
+_keyList_=[['h','signQ','T','TOW'],        
+          ['TOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lat', 'lon', 'height','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
+          ['GPSWeek','TOW','pin','count'],
+          ['TOW','GPSWeek','insStatus','hdwStatus','QuatW','QuatX','QuatY','QuatZ','velX', 'velY', 'velZ','lat', 'lon', 'height']]  # order matters!!
 
 
 class INSLASERdata:
     
-    MSG_list=['Laser','PINS1','PSTRB']    # NMEA message list to parse
-    keyList=[['h','signQ','T','TOW'],        
-             ['TOW','GPSWeek','insStatus','hdwStatus','roll','pitch','heading','velX', 'velY', 'velZ','lat', 'lon', 'height','OffsetLLA_N','OffsetLLA_E','OffsetLLA_D'],
-             ['GPSWeek','TOW','pin','count']]  # order matters!!
         
     # extr_list=['PINS1','Laser']
     
@@ -59,10 +61,12 @@ class INSLASERdata:
         
             Inputs:
             ---------------------------------------------------    
-            path:           file path
+            filepath:           file path
            
            
         """
+        
+        
         if name!='': 
             self.name=name
         else:
@@ -76,8 +80,8 @@ class INSLASERdata:
         self.c_pitch=c_pitch
         self.c_roll=c_roll
         
-        
-        
+        self.keyList=_keyList_.copy()
+        self.MSG_list=_MSG_list_.copy()
         
         if load:
             self.loadData(correct_Laser=correct_Laser,droplaserTow0=droplaserTow0)
@@ -144,7 +148,7 @@ class INSLASERdata:
             else:
                 self.other.append(l)
         
-        # drop  laser points with To=0        
+        # drop  laser points with ToW=0        
         if droplaserTow0:
             for j,l in enumerate(self.LaserList):
                 if l[-1]!=0:
@@ -156,6 +160,7 @@ class INSLASERdata:
             if len(getattr(self,msg+'List'))>0:
                 values=np.array(getattr(self,msg+'List'))
                 keys=self.keyList[self.MSG_list.index(msg)]
+                print(keys)
                 getattr(self,msg).addData(keys,values)
             
             # delattr(self,msg+'List')
@@ -187,7 +192,8 @@ class INSLASERdata:
             self.Laser.pitch=pitch
             self.Laser.roll=roll
             self.Laser.h_corr=self.Laser.h*(np.cos(pitch)*np.cos(roll))-self.distCenter*np.sin(pitch)
-        
+            self.Laser.keys.extend(['h_corr','roll','pitch'])
+           
         except Exception as e: 
             print(e)
             print('Failed to correct Laser height')
@@ -674,7 +680,7 @@ def plot_summary(data,extent,cmap=cm.batlow,heading=True):
     
     ax3 = fig.add_subplot(spec[7:9, 0],sharex = ax1)
     plot_att(data,ax=ax3,title='none',heading=heading)
-
+    pl.tight_layout()
     return fig
 
 
@@ -851,3 +857,11 @@ def plot_mapOSM(data,z='height',ax=[],cmap= cm.batlow,title=[], extent=[]):
         pl.title(title)
     pl.tight_layout()
 
+def getextent(data):
+    minlon=data.PINS1.lon.min()
+    maxlon=data.PINS1.lon.max()
+    minlat=data.PINS1.lat.min()
+    maxlat=data.PINS1.lat.max()
+    dlat=maxlat-minlat
+    dlon=maxlon-minlon
+    return minlon-dlon/10,maxlon+dlon/10,minlat-dlat/10,maxlat+dlat/10
