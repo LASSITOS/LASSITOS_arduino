@@ -229,7 +229,11 @@ uint64_t freqs[] ={F1,F2,F3,F456,F46,F4,F5,F6};
 int Nfreq=8;  //Number of frequencies to use
 int ifreq =2;
 uint64_t freq=freqs[ifreq];
-
+int Nmulti =0;
+int i_multi =0;
+uint64_t Multifreqs[]={1,3,7};//Multifreqs[10];
+int MultiPeriod=300;
+long MultiTime=0;
 
 // states of CSwitch for each frequencz
 #define stateF1 0x80
@@ -241,6 +245,8 @@ uint64_t freq=freqs[ifreq];
 
 uint8_t CSw_states[] ={stateF1,stateF2,stateF3,stateF4+stateF5+stateF6,stateF4+stateF6,stateF4,stateF5,stateF6};
 uint8_t CSw_state=CSw_states[ifreq];
+
+
 #define CALF1 1055
 #define CALF2 4744
 #define CALF3 8805
@@ -516,9 +522,10 @@ void testCal(){
 		digitalWrite(PIN_MUTE , HIGH);  // unmute
         delay(1000);
 		
-		for (int j=0; j<4; ++j) {
+		for (int j=1; j<4; ++j) {
 			setCswitchCal(CAL_states[j]);
-			delay(10);
+			delay(1000);
+			setCswitchCal(0);
 			delay(1000);
 		}
 		
@@ -533,21 +540,21 @@ void testCal(){
 }
 
 
-
-
 void CalInFlight(){
 	delay(500);
 	strcpy(txString,"Starting cal test");
 	Send_tx_String(txString) ;
   
-	for (int j=0; j<4; ++j) {
+	for (int j=1; j<4; ++j) {
 			setCswitchCal(CAL_states[j]);
-			delay(5000);
+			delay(1000);
+			setCswitchCal(0);
+			delay(1000);
 		}
-
    strcpy(txString,"End of calibration");
    Send_tx_String(txString) ;
 }
+
 
 
 void frequencySweep(int start,int stp,int Delta){
@@ -1126,6 +1133,7 @@ void getDateTime() {
         bitesToWrite = tempBufferSize;
       }
       IMX5.readBytes(tempBuffer, bitesToWrite);
+      tempBuffer[bitesToWrite]='\0';
       String msg = (char*)tempBuffer;
       // Serial.println(msg);
       msg[bitesToWrite]='\0';
@@ -1373,7 +1381,14 @@ void Write_header() {
   dataFile.println(asciiMessage);
   dataFile.println(F("#Signal generation settings: "));
   dataFile.println(F("# --------------------------"));
-  dataFile.printf("# Frequency: %d",freq);
+  if (Nmulti==0){
+    dataFile.printf("# Frequency: %d",freq);
+  }else{
+	  dataFile.print("# Frequency: multifrequency"); 
+	for (int i=0; i < Nmulti ;i++){
+		dataFile.printf("# \t F%d: %d kHz",i+1,freqs[Multifreqs[i]]); 
+	  }
+  }
   dataFile.println("#");
 }
 
@@ -1576,14 +1591,24 @@ void startMeasuring() {
 	  }
     Serial.println(txString);  
     // measuring = false;  
+    // stop_Measuring(FS);
     // return;
   }
   
 
   // Start DAC
   //-----------
-  run();
+  if (Nmulti==0){
+	  run();
+	}
+	if (SD_filecreated){
+    strcat(txString, "\r\nStarted measurement!");
+    Serial.println(txString);
 
+  } else{
+    strcat(txString, "\r\n SD not working. Abort.");
+    Serial.println(txString);
+  }
   strcat(txString, "\r\nStarted measurement!");
   Serial.println(txString);
   BLE_message = true; //Send_tx_String(txString);
@@ -1706,12 +1731,13 @@ void parse( String rxValue){     //%toCheck
 	
   } else if(rxValue.indexOf("RESMICRO") != -1){
     resetMicro();
-  
-  } else if (rxValue.indexOf("CAL") != -1 or rxValue.indexOf("cal") != -1) { 
-    calibrating=1;
 
   } else if (rxValue.indexOf("TESTCAL") != -1 or rxValue.indexOf("testcal") != -1) { 
+    Serial.println("Starting calibration test");
     testCal();
+
+  } else if (rxValue.indexOf("CAL") != -1 or rxValue.indexOf("cal") != -1) { 
+    calibrating=1;
 
   } else if (rxValue.indexOf("TESTLONG") != -1 or rxValue.indexOf("testlong") != -1) { 
     Serial.println("Starting long test");
@@ -1879,6 +1905,7 @@ void parse( String rxValue){     //%toCheck
 		  configureResFreq(ifreq);
 		  sprintf(txString,"New resonant frequency is: %d",freqs[ifreq]);
 		  Serial.println(txString);
+		  Nmulti =0;
 	  }else {
 		  sprintf(txString,"Error! Pass a valid index for resonant frequency between 0 and '%d''", Nfreq-1);
 	  }
@@ -1886,7 +1913,12 @@ void parse( String rxValue){     //%toCheck
       sprintf(txString,"Resonant frequency can not be parsed from string '%s''",rxValue);
       Serial.println(txString);
     }
-	
+  
+  } else if (rxValue.indexOf("SETMULTIFREQ") != -1) {
+	  Serial.println("Setting measurement to multiple frequencies ");
+      stop_trigger();
+	  Nmulti =3;
+
 	
   } else if (rxValue.indexOf("SETFREQ") != -1) {
 	  Serial.println("Setting new frequency value! ");
@@ -2420,6 +2452,38 @@ void loop() {
 
 
 
+    //  Switch multifreq
+    // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+	if (Nmulti>0 & millis()-MultiTime >MultiPeriod ){
+		// long tik =  millis();
+		stop_trigger();
+		digitalWrite(PIN_MUTE , LOW);  // mute
+		delay(3);
+		int i=Multifreqs[ i_multi ];
+		freq=freqs[i];
+		configureSineWave();
+		setCswitchTx(CSw_states[i]);
+		delay(3);
+		digitalWrite(PIN_MUTE , HIGH);  // unmute
+		run2();
+		trigger();
+		
+		// int tok=millis();
+		// Serial.printf("New frequency is: %d,",freq);
+		// Serial.printf("Total switching time: %d ms,",tok-tik);
+		// Serial.printf("Switching intervall: %d ms,",tik-MultiTime);
+    // Serial.println(" ");
+		MultiTime=millis();
+		i_multi=(i_multi+1)%Nmulti;
+		
+	}
+
+
+
+
+
+
+
     //  Write data to SD
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if (((myBufferSize + BufferTail - BufferHead) % myBufferSize) > sdWriteSize) {
@@ -2530,7 +2594,7 @@ void loop() {
         setCswitchCal(0);
         int msglen=7;
         writeToBuffer((uint8_t*)"CalOff\n", msglen);
-        if (CAL_state==N_cal){
+        if (CAL_state==N_cal-1){
           calibrating=0;
           strcpy(txString,"End of calibration");
 	        Send_tx_String(txString) ;
