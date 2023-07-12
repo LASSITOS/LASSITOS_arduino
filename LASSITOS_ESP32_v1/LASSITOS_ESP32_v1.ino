@@ -24,7 +24,7 @@ HardwareSerial RS232(2);
 HardwareSerial IMX5(1);
 // HardwareSerial Serial(0);
 
-#define Version "LASSITOS EM sounder ESP32 v1.0"
+#define Version "LASSITOS EM sounder ESP32 v1.1"
 
 long lastTime = 0;  //Simple local timer
 long lastTime1 = 0;  //Simple local timer
@@ -37,6 +37,11 @@ long logTime_IMX5;
 long lastTime_VBat; 
 long lastTime_Temp; 
 long lastTime_CAL =0;
+
+
+TaskHandle_t TaskStart;
+TaskHandle_t TaskEnd;
+
 
 // settings PIN SPI 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -96,6 +101,10 @@ File dataFile;          //File where data is written to
 
 
 bool measuring = false;
+bool StartFlag = false;
+bool StopFlag = false;
+bool closefileFlag = true;
+
 unsigned long lastPrint;  // Record when the last Serial print took place
 
 
@@ -119,7 +128,7 @@ int  IMX5_Tx =25;  //  Hardware TX pin, to PIN8 on IMX5
 int  IMX5_strobe = 4; //  GPIO for STROBE input (first), to  PIN2 on IMX5 !!!!!!!!Reserved for radio but can be used meanwhile!!!!!!!!
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 #define baudrateIMX5 230400  //115200
-#define IMX5_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
+#define IMX5_BufferSize 8192  // Allocate 1024 Bytes of RAM for UART serial storage
 #define IMX5_log_intervall 2000
 #define STROBE_intervall 5000
 // char asciiMessage[] = "$ASCB,512,,,200,,,,30000,,30000,,,";  // // Get PINS1 @ 100ms, 30s  on the connected serial port, leave all other broadcasts the same, and save persistent messages.
@@ -255,7 +264,7 @@ int CAL_state=0;
 int N_cal=4;
 bool calibrating=0;
 bool cal_on=0;
-int  CAL_intervall_on=5000;
+int  CAL_intervall_on=1000;
 int  CAL_intervall_off=1000;
 
 #define MAXGAIN 0x1800
@@ -381,8 +390,15 @@ void statusMicroLong(){
 
 
 void ParseStatus(int out){   	
-  Serial.print(out);
-	// Parsing  response from microcontroller
+  Serial.print("Parsing status message:");
+  Serial.printf("%03X, ",status_out);
+	MSP430_CMD_OK =0;
+	MSP430_measuring  =0;
+  MSP430_SD_ERR = 0;
+  MSP430_CALIBRATING = 0;
+	MSP430_STARTING = 0;
+  
+  // Parsing  response from microcontroller
 	if ((out& TSTAT_CMD_OK )==TSTAT_CMD_OK ){
 		MSP430_CMD_OK =1;
 		
@@ -390,19 +406,17 @@ void ParseStatus(int out){
 			MSP430_measuring = 1;
 		}else if((out& TSTAT_SD_ERR)==TSTAT_SD_ERR){
 			MSP430_SD_ERR = 1;
-			Serial.print("Microcontroller SD not running!");
+			Serial.print("MSP430 SD not running!");
 		}else if((out& TSTAT_CALIBRATING)==TSTAT_CALIBRATING){
 			MSP430_CALIBRATING = 1;
-			Serial.print("Microcontroller is calibrating!");
+			Serial.print("MSP430 is calibrating!");
 		}else if((out& TSTAT_STARTING)==TSTAT_STARTING){
 			MSP430_STARTING = 1;
-			Serial.print("Microcontroller is starting!");
+			Serial.print("MSP430 is starting!");
 		}
 
 	} else {
-		MSP430_CMD_OK =0;
-		MSP430_measuring  =0;
-    Serial.print("Microcontroller got wrong message");
+    Serial.print("MSP430 can't be reached or got wrong message");
 	}
 
 }
@@ -1362,7 +1376,7 @@ void deleteFile(fs::FS &fs, const char *path) {
 
 
 void Write_header() {
-  dataFile.println(F("#LASSITOS INS and Laser altimeter log file"));
+  dataFile.println(F("#LEM INS and Laser altimeter log file"));
   dataFile.print("# Date: ");
   dataFile.print(Year);
   dataFile.print("-");
@@ -1521,7 +1535,7 @@ void writeToBuffer(uint8_t *tempBuf, int &bitesToWrite) {
 
 
 void startMeasuring() {
-  BLE_message = true;
+  // BLE_message = true;
   
   // Configure DAC
   //-----------
@@ -1555,10 +1569,12 @@ void startMeasuring() {
   delay(200);
 	
 	
-  while (RS232.read() >= 0)
+  while (RS232.read() >= 0){
     ;  // flush the receive buffer.
+  }
+
   // while (IMX5.read() >= 0)
-    ;  // flush the receive buffer.
+    // ;  // flush the receive buffer.
   while (IMX5.available() > 0){
     char k = IMX5.read();
   }
@@ -1567,14 +1583,64 @@ void startMeasuring() {
   FormatAsciiMessage(infoMsg, sizeof(infoMsg), asciiMessageformatted);
   IMX5.write(asciiMessageformatted);  //send instruction for sending ASCII messages
 
+
+
+  xTaskCreatePinnedToCore(
+                    TaskStartCode,  /* Task function. */
+                    "TaskStart",    /* name of task. */
+                    10000,       	/* Stack size of task */
+                    NULL,        	/* parameter of the task */
+                    1,           	/* priority of the task */
+                    &TaskStart,     /* Task handle to keep track of created task */
+                    0); 			/* Core where the task should run */ 
+
+}
+
+
+void TaskStartCode(void * pvParameters) {
   
+  while(true){
+  // Start MSP430
+  //-----------
+  startMSP430();
+  
+  // Start DAC
+  //-----------
+  if (Nmulti==0){
+	  run();
+	}
+
+  if (SD_filecreated){
+    strcat(txString, "\r\nFile succesfully created on ESP32 SD card");
+    Serial.println(txString);
+
+  } else{
+    strcat(txString, "\r\n ESP32 SD not working. Abort.");
+    Serial.println(txString);
+	  interrupt_Measuring();
+	  vTaskDelete(TaskStart);
+  }
+  
+  strcat(txString, "\r\nStarted measurement succesfully!");
+  Serial.println(txString);
+  BLE_message = true; //Send_tx_String(txString);
+  
+  vTaskDelete(TaskStart);
+  
+  }
+}
+
+
+
+
+void startMSP430() {
   
   //start Microcontroller data logger
   //----------------------------------
   resetMicro();
   delay(200) ;
   startMicro();	  
-  delay(4000)   ;  // Wait until microcontroller started the measurement
+  delay(3000)   ;  // Wait until microcontroller started the measurement
   status_out = statusMicro();
   Serial.print("\r\nMicrocontroller status: 0x");
   Serial.printf("%08X, ",status_out);
@@ -1590,37 +1656,37 @@ void startMeasuring() {
       strcat(txString, " SD not working");
 	  }
     Serial.println(txString);  
-    // measuring = false;  
-    // stop_Measuring(FS);
-    // return;
+    interrupt_Measuring();
+    vTaskDelete(TaskStart);
   }
+}
+
+// Interrupt data measuring process when there is an error at startup. No successful measurement
+void interrupt_Measuring() {
+  measuring = false;  // Set flag to false
+  BLE_message = true;
+  Serial.println("abort mesurment!");
   
+  //Stop DAC
+  stop_trigger();
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+  //Stop Micro
+  delay(50);
+  stopMicro();
 
-  // Start DAC
-  //-----------
-  if (Nmulti==0){
-	  run();
-	}
-	if (SD_filecreated){
-    strcat(txString, "\r\nStarted measurement!");
-    Serial.println(txString);
+  delay(25);
+  dataFile.println(F("# unsuccesful measurement"));
 
-  } else{
-    strcat(txString, "\r\n SD not working. Abort.");
-    Serial.println(txString);
-  }
-  strcat(txString, "\r\nStarted measurement!");
-  Serial.println(txString);
+  closefileFlag = true;
+
   BLE_message = true; //Send_tx_String(txString);
 }
 
 
-
-
 // Stop data measuring process
-void stop_Measuring(fs::FS &fs) {
-  measuring = false;  // Set flag to false
-  BLE_message = true;
+void stopTask(void * pvParameters) {
+  while(true){
   Serial.println("Turning dataMeasuring OFF!");
   
   //Stop DAC
@@ -1631,7 +1697,38 @@ void stop_Measuring(fs::FS &fs) {
   delay(1000);
   stopMicro();
   
+  measuring = false;  // Set flag to false
   
+  delay(100);
+  emptyBuffer();
+  delay(100);
+  closefileFlag = true;
+
+  // Serial.println("Datafile closed.");                     
+  strcat(txString, "Measurement stopped successfully");
+  BLE_message = true; //Send_tx_String(txString);
+
+  vTaskDelete(TaskEnd);
+  }
+}
+
+
+void closeFile(fs::FS &fs){
+  // output file string
+  char filesstring[50];
+  strcpy(txString, "Closed file:");
+  sprintf(filesstring, " File: %s", dataFileName);
+  strcat(txString, filesstring);
+  Serial.print("Closing file:");
+  Serial.println(filesstring);
+  delay(25);
+  Write_stop();
+  dataFile.close();  // Close the data file
+  Serial.println("Datafile closed."); 
+  BLE_message = true;  
+}
+
+void emptyBuffer(){
   //  Empty data buffer
   // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   Serial.print("Total bytes in buffer:");
@@ -1675,6 +1772,61 @@ void stop_Measuring(fs::FS &fs) {
   }
   Serial.print("Buffer emptied! Data written:");
   Serial.println(bytesTot);
+  
+}
+
+
+// Stop data measuring process
+void stop_Measuring(fs::FS &fs) {
+  measuring = false;  // Set flag to false
+  BLE_message = true;
+  Serial.println("Turning dataMeasuring OFF!");
+  
+  //Stop DAC
+  stop_trigger();
+  digitalWrite(PIN_MUTE , LOW);  // mute
+  
+  //Stop Micro
+  delay(1000);
+  stopMicro();
+  
+
+
+  //Read data INS+Laser
+  // =-=-=-=-=-=-=-=-=-
+   //  Laser data
+  int times=0;
+  while (RS232.available() ) {
+    bitesToWrite = RS232.available();
+    if (tempBufferSize < bitesToWrite) {
+      bitesToWrite = tempBufferSize;
+    }
+    RS232.readBytes(tempBuffer, bitesToWrite);
+    writeToBuffer(tempBuffer, bitesToWrite);
+    times++;
+    delay(1);
+  }
+  Serial.print("Wrote Laser data to buffer N times. N=");
+  Serial.println(times);
+   
+  //  INS data
+  times=0;
+  while (IMX5.available() ) {
+    bitesToWrite = IMX5.available();
+    if (tempBufferSize < bitesToWrite) {
+      bitesToWrite = tempBufferSize;
+    }
+
+    IMX5.readBytes(tempBuffer, bitesToWrite);
+    writeToBuffer(tempBuffer, bitesToWrite);
+    times++;
+    delay(1);
+  }
+  Serial.print("Wrote INS data to buffer N times. N=");
+  Serial.println(times);
+
+
+  emptyBuffer();
 
   // output file string
   char filesstring[50];
@@ -1703,16 +1855,18 @@ void parse( String rxValue){     //%toCheck
   BLE_message = true;
   if (rxValue.indexOf("START") != -1) {
 	  if (measuring) {
-    strcpy(txString, "Already measuring.");
-    Serial.println(txString);
-    return;
-  }
-  measuring = true;
-    startMeasuring();
+      strcpy(txString, "Already measuring.");
+      Serial.println(txString);
+      return;
+    }
+    // measuring = true;
+    // startMeasuring();
+    StartFlag = true;
   
   } else if (rxValue.indexOf("STOP") != -1) {
-	measuring = false;
-	  stop_Measuring(SD);
+	  // measuring = false;
+	  // stop_Measuring(SD);
+    StopFlag = true;
 	  
   } else if (rxValue.indexOf("STATUS") != -1) {
 	  statusMicro8();
@@ -2454,29 +2608,29 @@ void loop() {
 
     //  Switch multifreq
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-	if (Nmulti>0 & millis()-MultiTime >MultiPeriod ){
-		// long tik =  millis();
-		stop_trigger();
-		digitalWrite(PIN_MUTE , LOW);  // mute
-		delay(3);
-		int i=Multifreqs[ i_multi ];
-		freq=freqs[i];
-		configureSineWave();
-		setCswitchTx(CSw_states[i]);
-		delay(3);
-		digitalWrite(PIN_MUTE , HIGH);  // unmute
-		run2();
-		trigger();
-		
-		// int tok=millis();
-		// Serial.printf("New frequency is: %d,",freq);
-		// Serial.printf("Total switching time: %d ms,",tok-tik);
-		// Serial.printf("Switching intervall: %d ms,",tik-MultiTime);
-    // Serial.println(" ");
-		MultiTime=millis();
-		i_multi=(i_multi+1)%Nmulti;
-		
-	}
+    if (Nmulti>0 & millis()-MultiTime >MultiPeriod ){
+      // long tik =  millis();
+      stop_trigger();
+      digitalWrite(PIN_MUTE , LOW);  // mute
+      delay(3);
+      int i=Multifreqs[ i_multi ];
+      freq=freqs[i];
+      configureSineWave();
+      setCswitchTx(CSw_states[i]);
+      delay(3);
+      digitalWrite(PIN_MUTE , HIGH);  // unmute
+      run2();
+      trigger();
+      
+      // int tok=millis();
+      // Serial.printf("New frequency is: %d,",freq);
+      // Serial.printf("Total switching time: %d ms,",tok-tik);
+      // Serial.printf("Switching intervall: %d ms,",tik-MultiTime);
+      // Serial.println(" ");
+      MultiTime=millis();
+      i_multi=(i_multi+1)%Nmulti;
+      
+    }
 
 
 
@@ -2561,27 +2715,13 @@ void loop() {
     // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if (lastTime_Temp + Temp_intervall < millis()) {
       lastTime_Temp = millis();
-      // long time=millis();
       logTemp(tempsens1,1);
       logTemp(tempsens2,2);
 	    logTemp(tempsens3,3);
 	    // logTemp(tempsens4,4);
-      // Serial.printf("Time: %d ms", millis()-time);
-      // for  (int i = 0; i < N_TempSens; i++) {
-      //     Serial.printf("Reading Sensor: %d", i);
-      //     time=millis();
-      //     logTemp2(i);
-      //     Serial.printf("Time: %d ms", millis()-time);
-      // }
     }
 	
-	// // Send strobe pulse every "strobe_intervall"
-    // // =-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    // if (lastTime_STROBE + STROBE_intervall < millis()) {
-      // pulseStrobeIMX5();
-      // Serial.println("STROBE");
-      // lastTime_STROBE = millis(); 
-    // }
+
 	
 
 	// Execute calibration if necessary
@@ -2621,12 +2761,34 @@ void loop() {
     }
 
   } else {
-    delay(50);  // wait 50 ms if not measuring
+    delay(50);  // wait 50 ms if not 
+	//  Serial.print("loop() running on core ");
+	// Serial.println(xPortGetCoreID());
   }
 
 
-
   //################################# Do other stuff #############################################
+
+  // Moving STOP and START in loop should make them independent of BLE
+  if (StopFlag) {
+    StopFlag = false;
+    // measuring = false;
+	  // stop_Measuring(SD);
+	xTaskCreatePinnedToCore(stopTask,"TaskEnd",10000, NULL, 1,  &TaskEnd,0); 
+  }
+
+  if (closefileFlag) {
+    closefileFlag = false;
+	  closeFile(SD);
+    Serial.println("End of meaurement");  
+  }
+
+  if (StartFlag) {
+    StartFlag = false;
+    measuring = true;
+    startMeasuring();
+  }
+
 
   // Check BLE connection
   if (deviceConnected && BLE_message) {
