@@ -44,8 +44,8 @@ BLECharacteristic *pTxCharacteristic;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 bool BLE_message = false;
-
-
+bool BLEinput=false;
+String rxValueBLE;
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
 #define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"  // UART service UUID
@@ -190,6 +190,17 @@ void loop(){
       }
   }  
   
+  if(BLEinput){
+		
+		Serial.println("Got BLE message");
+    Serial.print("Parsing:");
+    Serial.print(rxValueBLE);
+    parse(rxValueBLE);
+    BLEinput=false;
+    Serial.println("BLE message processed");
+  }
+
+
     // Check BLE connection
   if (deviceConnected && BLE_message) {
     // Serial.println("Sending BLE message");

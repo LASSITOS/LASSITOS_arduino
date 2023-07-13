@@ -19,20 +19,24 @@ class MyServerCallbacks : public BLEServerCallbacks {
 
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) {
+    // rxValueBLE = pCharacteristic->getValue();
     std::string rxValue = pCharacteristic->getValue();
 
     if (rxValue.length() > 0) {
-		String rxValue2=rxValue.c_str();
-		// for (int i = 0; i < rxValue.length(); i++)
-		// rxValue2 += rxValue[i];
+     
+		rxValueBLE =rxValue.c_str();
 
 		Serial.println("*********");
 		Serial.println("Received Value: ");
-		Serial.println("*********");
-		BLE_message=true;
-		sprintf(subString,"BLE input: %s\n",rxValue2);
-		strcat(txString,subString);
-		parse(rxValue2);
+    Serial.println(rxValueBLE);
+    Serial.println("*********");
+		// BLE_message=true;
+		// sprintf(subString,"BLE input: %s\n",rxValue2);
+		// strcat(txString,subString);
+    
+    // sprintf(rxValueBLE,"%s",rxValue2);
+    BLEinput=true;
+		// parse(rxValue2);
     }
   }
 };

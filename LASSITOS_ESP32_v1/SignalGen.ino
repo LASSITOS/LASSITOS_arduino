@@ -180,10 +180,7 @@ void testCal(){
 	Send_tx_String(txString) ;
 	startMicro2();   // start recording of ADC data for given duration in seconds
   digitalWrite(PIN_MUTE , LOW);  // mute
-  delay(2000);
-  digitalWrite(PIN_MUTE , HIGH);  // unmute
-  delay(2000);
-  digitalWrite(PIN_MUTE , LOW);  // mute
+  delay(1000);
   
 	for (int i=0; i<Nfreq; ++i) {
 		freq=freqs[i];
@@ -191,16 +188,16 @@ void testCal(){
     setCswitchTx(CSw_states[i]);
     delay(10);
     digitalWrite(PIN_MUTE , HIGH);  // unmute
-    delay(500);
+    delay(100);
     run2();
     trigger();
     delay(1000);
 		
 		for (int j=1; j<4; ++j) {
 			setCswitchCal(CAL_states[j]);
-			delay(1000);
+			delay(3000);
 			setCswitchCal(0);
-			delay(1000);
+			delay(2000);
 		}
 		
 		stop_trigger();
@@ -228,17 +225,13 @@ void frequencySweep(int start,int stp,int Delta){
     digitalWrite(PIN_MUTE , HIGH);  // unmute
     
 	  for (int i=A; i<B; ++i) {
-		  // Play the note for a quarter of a second.
 		  freq=i*Delta;
 		  configureSineWave();
-		  // sprintf(subString,"f: %d",freq );
-      // strcat(txString,subString);
 		  digitalWrite(PIN_MUTE , HIGH);  // unmute
 		  // run();
       run2();
       trigger();
 		  delay(200);
-		  // Pause for a tenth of a second between notes.
 		  stop_trigger();
 		  digitalWrite(PIN_MUTE , LOW);  // mute
 		  delay(50);
@@ -249,6 +242,8 @@ void frequencySweep(int start,int stp,int Delta){
 	  strcpy(txString,"End of sweep");
 	  Send_tx_String(txString) ;
 }	  
+
+
 
 void GainSweep(int start,int stp,int Delta){
 
@@ -264,11 +259,6 @@ void GainSweep(int start,int stp,int Delta){
     
 	  int A=start/Delta;
 	  int B=stp/Delta;
-    // Serial.print("A");
-    // Serial.println(A);
-    // Serial.print("B");
-    // Serial.println(B);
-	  
 	  delay(500);
 	  strcpy(txString,"Starting gain sweep");
 	  Send_tx_String(txString) ;
@@ -279,17 +269,8 @@ void GainSweep(int start,int stp,int Delta){
 	  for (int j=0; j<Nfreq; ++j) {
 		  freq=freqs[j];
 		  configureSineWave();
-		  // sprintf(subString,"f: %d",freq );
-      // strcat(txString,subString);
       setCswitchTx(CSw_states[j]);
-      // if(j==0){ 
-      //   digitalWrite(PIN_GPIOswitch , HIGH);
-      //   delay(10);
-      // }else{
-      //   digitalWrite(PIN_GPIOswitch , LOW);
-      //   delay(10);
-      // }
-
+     
       
 		  for (int i=A; i<B; ++i) {
 			  // Play the note for a quarter of a second.

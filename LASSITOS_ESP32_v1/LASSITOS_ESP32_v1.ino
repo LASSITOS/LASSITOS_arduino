@@ -122,9 +122,10 @@ bool deviceConnected = false;
 bool oldDeviceConnected = false;
 char txString[500];  // String containing messages to be send to BLE terminal
 char txString2[50];
-char subString[32];
+char subString[64];
 bool BLE_message = false;
-
+bool BLEinput=false;
+String rxValueBLE;
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
@@ -257,15 +258,15 @@ uint8_t CSw_states[] ={stateF1,stateF2,stateF3,stateF4+stateF5+stateF6,stateF4+s
 uint8_t CSw_state=CSw_states[ifreq];
 
 
-#define CALF1 1055
-#define CALF2 4744
-#define CALF3 8805
-int CAL_states[]={0,1,2,4};
+// #define CALF1 1055
+// #define CALF2 4744
+// #define CALF3 8805
+int CAL_states[]={0,1,2,4,6};
 int CAL_state=0;
-int N_cal=4;
+int N_cal=5;
 bool calibrating=0;
 bool cal_on=0;
-int  CAL_intervall_on=1000;
+int  CAL_intervall_on=3000;
 int  CAL_intervall_off=1000;
 
 #define MAXGAIN 0x1800
@@ -1168,7 +1169,18 @@ void loop() {
     oldDeviceConnected = deviceConnected;
   }
 
-
+  if(BLEinput){  // Check BLE inputs
+		Serial.println("Got BLE message");
+    Serial.print("Parsing:");
+    Serial.print(rxValueBLE);
+    sprintf(subString,"BLE input: %s\n",rxValueBLE);
+		strcat(txString,subString);
+    Send_tx_String(txString);
+    delay(10);
+    BLEinput=false;
+    parse(rxValueBLE);
+    Serial.println("BLE message processed");
+  }
 
   if (Serial.available()) {  // Check Serial inputs
     String rxValue = Serial.readString();

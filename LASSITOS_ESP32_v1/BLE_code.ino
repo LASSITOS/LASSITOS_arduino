@@ -22,17 +22,19 @@ class MyCallbacks : public BLECharacteristicCallbacks {
     std::string rxValue = pCharacteristic->getValue();
 
     if (rxValue.length() > 0) {
-		String rxValue2=rxValue.c_str();
-		// for (int i = 0; i < rxValue.length(); i++)
-		// rxValue2 += rxValue[i];
+      rxValueBLE =rxValue.c_str();
+      BLEinput=true;
+		// String rxValue2=rxValue.c_str();
+		// // for (int i = 0; i < rxValue.length(); i++)
+		// // rxValue2 += rxValue[i];
 
-		Serial.println("*********");
-		Serial.println("Received Value: ");
-		Serial.println("*********");
-		BLE_message=true;
-		sprintf(subString,"BLE input: %s\n",rxValue2);
-		strcat(txString,subString);
-		parse(rxValue2);
+		// Serial.println("*********");
+		// Serial.println("Received Value: ");
+		// Serial.println("*********");
+		// BLE_message=true;
+		// sprintf(subString,"BLE input: %s\n",rxValue2);
+		// strcat(txString,subString);
+		// parse(rxValue2);
     }
   }
 };

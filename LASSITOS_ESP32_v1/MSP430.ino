@@ -113,7 +113,7 @@ void ParseStatus(int out){
 
 void resetMicro(){
   spiCommand8( CDM_reset  , CS_MSP430 );
-	delay(300)   ;  // Check that this is enought time for the microcontroller stopping the measurements
+	delay(500)   ;  // Check that this is enought time for the microcontroller stopping the measurements
 	Serial.print("Send reset to Microcontroller!");
 	// spiCommand8( CDM_status , CS_MSP430 );
 	// delay(2);
