@@ -74,6 +74,29 @@ void readFile(fs::FS &fs, const char *path) {
   file.close();
 }
 
+void readFileLong(fs::FS &fs, const char *path) {
+  Serial.printf("## Reading file: %s\n", path);
+  File file = fs.open(path);
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    return;
+  }
+
+  int bufferfull=0;
+  //    Serial.println("Read from file: ");
+  while (file.available()) {
+    // while (Serial.availableForWrite()<512){
+    //   Serial.println(Serial.availableForWrite());
+    //   delay(1);
+    //   bufferfull++;
+    // }
+    Serial.write(file.read());
+    
+  }
+  file.close();
+  // Serial.printf("Buffer was full n=%d times\n", bufferfull);
+}
+
 void writeFile(fs::FS &fs, const char *path, const char *message) {
   Serial.printf("Writing file: %s\n", path);
 
@@ -265,9 +288,13 @@ void readFiles(String rxValue) {
       Serial.println("");
       //      Serial.print("%% Reading file:");
       //      Serial.println(path);
-      readFile(SD, path);
-      Serial.println(" \n## End of file");
-
+      if (rxValue.indexOf("READTOT") != -1) {
+		readFileLong(SD, path);
+		Serial.println(" \n## End of file");
+	  } else {
+		readFile(SD, path);
+		Serial.println(" \n## End of file");
+	  }
     } else if (index = -1) {
       Serial.print("Reading file:");
       Serial.println(dataFileName);

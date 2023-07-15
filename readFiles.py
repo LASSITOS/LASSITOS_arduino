@@ -63,10 +63,10 @@ def read_file(file,path='',printcontent=False,com='COM8',baud=115200):
                 if printcontent:
                     print(l)
                 
-                if l[:10] == b'## Reading' :
+                if l[:4] == b'#LEM' :
                     r=True
                     print('start reading')
-                elif l[:6] == b'## End':
+                elif l[:6] == b'#STOP':
                     sweep=False
                     print('end of file')
                 elif r:

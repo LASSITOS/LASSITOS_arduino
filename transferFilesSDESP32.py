@@ -11,15 +11,22 @@ import os
 import sys
 
 
-def main(path='./',file='',list=False, COM='COM21',baud=115200,):  # Read the first sector of the first disk as example.
+BAUDRATE=115200
+COMPORT='COM21'
+
+
+def main(path='./',file='',list=False, COM=COMPORT,baud=BAUDRATE,):  # Read the first sector of the first disk as example.
     
     if COM[:3]!='COM':
         try:
-            COM=int(COM)
+            COM='COM{:d}'.format(int(COM))
         except Exception as e: 
             print("error. COM value not valid. E.g.: COM='COM21' or COM=21 ")
             print(e)
-
+    
+    print('COM port: {:s}'.format(COM))
+    print('baude rate: {:d}'.format(baud))
+    
     if list==True or file=='':
         list_files(com=COM,baud=baud)
     else:
@@ -27,7 +34,7 @@ def main(path='./',file='',list=False, COM='COM21',baud=115200,):  # Read the fi
 
 
 
-def list_files(com='COM21',baud=115200,timeout=5):
+def list_files(com=COMPORT,baud=BAUDRATE,timeout=5):
     """
     Print file list on ESP32 SD card.
     Parameters
@@ -40,6 +47,7 @@ def list_files(com='COM21',baud=115200,timeout=5):
     Returns
     -------
     None.
+    
    
     """
     
@@ -72,7 +80,7 @@ def list_files(com='COM21',baud=115200,timeout=5):
                     
                 
                     
-            time.sleep(0.001) 
+            time.sleep(0.0005) 
             if (time.time()-t>timeout):
                 print('timeout')
                 break
@@ -91,7 +99,7 @@ def list_files(com='COM21',baud=115200,timeout=5):
             print(e)
 
 
-def read_file(file,path='',printcontent=False,com='COM21',baud=115200,timeout=5):
+def read_file(file,path='',printcontent=False,com=COMPORT,baud=BAUDRATE,timeout=5,sleeptime=0.0005):
     """
     Parameters
     ----------
@@ -113,7 +121,7 @@ def read_file(file,path='',printcontent=False,com='COM21',baud=115200,timeout=5)
     
     # setting up serial port
     ser = serial.Serial(com, baud, timeout=0) 
-    
+    i_max=timeout/sleeptime
     try:
         print('Reading file: '+file)
         print('#------------------------')
@@ -134,7 +142,7 @@ def read_file(file,path='',printcontent=False,com='COM21',baud=115200,timeout=5)
             ser.close()
             return
         
-        bitstring=b'READ:/'+file.encode()+b':'
+        bitstring=b'READTOT:/'+file.encode()+b':'
         # bitstring=r'READ:/'+file+':'
         # print(bitstring)
         # print('#\n#\n#\n#\n#\n')
@@ -144,39 +152,77 @@ def read_file(file,path='',printcontent=False,com='COM21',baud=115200,timeout=5)
         
         bites_written=0
         printbites=5000
+        i=0
         while sweep: 
             l=ser.readline()
             if l!=b'':
-                t=time.time()
                 if printcontent:
                     print(l)
                 
-                if l[:4] == b'#LEM' :
+
+                
+                if l[:8] == b'#LEM INS' :
                     r=True
-                    print('start reading')
-                elif l[:6] == b'#STOP':
-                    STOP=True
-                if STOP:  #Stop one line after #STOP is detected
-                    sweep=False
-                    print('end of file')
-                
-                if r:
-                    # print('print to file')
                     bites_written+= f.write(l)
+                    print('start reading')
+                    break
                 
-                if bites_written>printbites:
-                    print('Bites written: {:d}'.format(bites_written)  ) 
-                    printbites+=5000
+                
                     
-            time.sleep(0.001) 
-            if (time.time()-t>timeout):
+            time.sleep(sleeptime) 
+            i+=1
+            if (i>i_max):
+                print('timeout')
                 break
+        
+        if r:
+            print('Start logging file')
+            i=0
+            while sweep: 
+                l=ser.readline()
+                if l!=b'':
+                    bites_written+= f.write(l)
+                    
+                    # t=time.time()
+                    if printcontent:
+                        print(l)
+                    
     
+                   
+                    
+                    if l[:5] == b'#STOP':
+                        time.sleep(0.01) 
+                        l=ser.readline()
+                        bites_written+= f.write(l)
+                        print('end of file')
+                        sweep=False
+                        break
+
+                    
+                    
+                    
+                    if bites_written>printbites:
+                        print('Bites written: {:d}'.format(bites_written)  ) 
+                        printbites+=5000
+                        
+                time.sleep(sleeptime) 
+                i+=1
+                if (i>i_max):
+                    print('timeout')
+                    sweep=False
+                    break
+                # if (time.time()-t>timeout):
+                #     print('timeout')
+                #     break
+        
+                
+        
         f.close()
         ser.close()
-        print('Total bites written: {:d}'.format(bites_written)  )
+        print('Total data written: {:.3f} kB'.format(bites_written/1000)  )
         print('file saved: {:s}'.format(path+'\\'+file)  )
         print('Time: {:.1f} s'.format(time.time() -t2) )
+    
     except Exception as e: 
         print('error')
         print(e)
@@ -187,7 +233,7 @@ def read_file(file,path='',printcontent=False,com='COM21',baud=115200,timeout=5)
             print('error')
             print(e)
 
-
+#%%
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         # Print the arguments passed in from the command line

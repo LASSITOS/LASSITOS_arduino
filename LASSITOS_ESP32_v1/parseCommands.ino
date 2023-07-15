@@ -173,6 +173,7 @@ void parse( String rxValue){     //%toCheck
   
   } else if (rxValue.indexOf("READ") != -1) {
 	readFiles(rxValue);
+  
   } else if (rxValue.indexOf("LIST") != -1) {
 	getFileList();
   } else if (rxValue.indexOf("COMS") != -1 or rxValue.indexOf("?") != -1) {

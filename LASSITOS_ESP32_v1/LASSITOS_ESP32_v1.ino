@@ -24,6 +24,8 @@ HardwareSerial RS232(2);
 HardwareSerial IMX5(1);
 // HardwareSerial Serial(0);
 
+#define baudrateSerial  115200 //230400  // 115200
+
 #define Version "LASSITOS EM sounder ESP32 v1.1"
 
 long lastTime = 0;  //Simple local timer
@@ -789,7 +791,7 @@ void check_INS() {
 // %%------------------------------------------------------------------------------------------------------------------------------
 void setup() {
 
-  Serial.begin(115200);
+  Serial.begin(baudrateSerial);
 
 	//Mute and Enable PINs Amplifier MA12070 
 	pinMode(PIN_EN , OUTPUT); 
