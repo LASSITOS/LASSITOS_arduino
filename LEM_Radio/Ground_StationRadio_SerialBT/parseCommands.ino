@@ -6,7 +6,6 @@
 // /////////////////////////////////////////////
 void parse( String rxValue){     //%toCheck
   //Start new data files if START is received and stop current data files if STOP is received
-  BLE_message = true;
   if (rxValue.indexOf("START") != -1) {
 	  makeLEMNMEAMSG("START",5);
   
@@ -106,13 +105,11 @@ void parse( String rxValue){     //%toCheck
       makeLEMNMEAMSG("TEMP",4);
 	
   } else {
-	BLE_message = true;
 	strcpy(txString, "Input can not be parsed retry!");
-	Serial.println(txString);
+	
+  Send_tx_String(txString);
   }
 }
-
-
 
 
 
@@ -122,7 +119,7 @@ void parse( String rxValue){     //%toCheck
 void makeLEMNMEAMSG(char *Message, int messageLength) {
   char LEMNMEA[32];
   char outMessage[32];
-  sprintf(outMessage,"$LEM,%s",Message);
+  sprintf(outMessage,"$LEMMS,%s",Message);
   // Serial.println(outMessage);
   FormatAsciiMessage(outMessage,  messageLength+8,  LEMNMEA);
   // Serial.println(LEMNMEA);
@@ -135,7 +132,7 @@ void makeLEMNMEAMSG_values(char *Message, int messageLength, int *values, int va
   char outMessage[128];
   char LEMNMEA[128];
   char valStr[16];
-  sprintf(outMessage,"$LEM,%s",Message);
+  sprintf(outMessage,"$LEMMS,%s",Message);
   int out_length=8+messageLength;
   for (int j =0;j<values_number;j++){
     sprintf(valStr,",%d",values[j]);

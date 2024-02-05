@@ -33,28 +33,37 @@ String rxValue;
 
 // Setting for BLE connection
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
+#include "BluetoothSerial.h"
 
-BLEServer *pServer = NULL;
-BLECharacteristic *pTxCharacteristic;
-bool deviceConnected = false;
-bool oldDeviceConnected = false;
+//#define USE_PIN // Uncomment this to use PIN during pairing. The pin is specified on the line below
+const char *pin = "1234"; // Change this to more secure PIN.
+
+String device_name = "LEM Ground Station BT";
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+#if !defined(CONFIG_BT_SPP_ENABLED)
+#error Serial Bluetooth not available or not enabled. It is only available for the ESP32 chip.
+#endif
+
+BluetoothSerial SerialBT;
+
 char txString[512];  // String containing messages to be send to BLE terminal
 char subString[64];
 char buffStr[512];
-bool BLE_message = false;
-bool BLEinput=false;
-String rxValueBLE;
 
-// See the following for generating UUIDs:
-// https://www.uuidgenerator.net/
-#define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"  // UART service UUID
-#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
-#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
-#define BLEname "LEM Ground Station BLE"
+
+
+// Send txSTring to BLE and Serial
+void Send_tx_String(char *txString) {
+
+  Serial.print(txString);
+  SerialBT.print(txString);
+
+  strcpy(txString, "");
+}
 
 
 
@@ -67,6 +76,18 @@ void setup() {
 
   Radio.begin(baudrateRadio,SERIAL_8N1, Radio_Rx, Radio_Tx);  
   RTCM_in.begin(baudrateRTCM,SERIAL_8N1, RTCM_Rx, RTCM_Tx);  
+
+  
+  // Bluetooth Serial setup
+  //------------------------
+  SerialBT.begin(device_name); //Bluetooth device name
+  Serial.printf("The device with name \"%s\" is started.\nNow you can pair it with Bluetooth!\n", device_name.c_str());
+  #ifdef USE_PIN
+    SerialBT.setPin(pin);
+    Serial.println("Using PIN");
+  #endif
+
+
 
 
   while(Radio.read() >= 0);
@@ -88,48 +109,13 @@ void loop() {
     Serial.print("Got message radio");
     String RadioTx = Radio.readString(); // read it and send it out Serial1 (pins 0 & 1)
     Serial.println(RadioTx);
-    BLE_message = true;
     RadioTx.toCharArray(buffStr, 512);
     strcat(txString, buffStr );
     Send_tx_String(txString);
     }
 
 
-  // Send out BLE messges if necessary
-  if (deviceConnected && BLE_message) {
-    // Serial.println("Sending BLE message");
-    pTxCharacteristic->setValue(txString);
-    pTxCharacteristic->notify();
-    BLE_message = false;
-    strcpy(txString, "");
-    delay(10); // bluetooth stack will go into congestion, if too many packets are sent
-  }
 
-
-  // disconnecting
-  if (!deviceConnected && oldDeviceConnected) {
-    //delay(500); // give the bluetooth stack the chance to get things ready
-    pServer->startAdvertising();  // restart advertising
-    Serial.println("start advertising");
-    oldDeviceConnected = deviceConnected;
-  }
-  // connecting
-  if (deviceConnected && !oldDeviceConnected) {
-    // do stuff here on connecting
-    oldDeviceConnected = deviceConnected;
-  }
-  if(BLEinput){  // Check BLE inputs
-		Serial.println("Got BLE message");
-    Serial.print("Parsing:");
-    Serial.print(rxValueBLE);
-    sprintf(subString,"BLE input: %s\n",rxValueBLE);
-		strcat(txString,subString);
-    Send_tx_String(txString);
-    delay(10);
-    BLEinput=false;
-    parse(rxValueBLE);
-    Serial.println("BLE message processed");
-  }
 
   if (Serial.available()) {  // Check Serial inputs
     String rxValue = Serial.readString();
@@ -138,11 +124,23 @@ void loop() {
       Serial.print("Received Value: ");
       for (int i = 0; i < rxValue.length(); i++)
         Serial.print(rxValue[i]);
-        Serial.println();
-		parse(rxValue);
-      Serial.println("*********");
+		Serial.println("*********");
+    parse(rxValue);
+      
     }
   }
 
-  delay(100);
+  if (SerialBT.available()) {  // Check SerialBT inputs
+    String rxValue = SerialBT.readString();
+    if (rxValue.length() > 0) {
+      SerialBT.println("*********");
+      SerialBT.print("Received Value: ");
+      for (int i = 0; i < rxValue.length(); i++)
+        SerialBT.print(rxValue[i]);
+      SerialBT.println("*********");
+      parse(rxValue);
+    }
+  }
+
+  delay(10);
 }
