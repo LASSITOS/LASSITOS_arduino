@@ -1,3 +1,4 @@
+
 /*
   Getting data from u-blox GNSS module and from LDS70A Laser altimeter and saving them to SD card.
   By: AcCapelli
@@ -25,12 +26,12 @@ int statLED = 13;
 
 // settings SPI
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-#define SCK  23
+#define SCK  18
 #define MISO  19
-#define MOSI  16
-#define CS  18
-#define SPI_rate 1000000
-#define triggerGPIO 04        
+#define MOSI  23
+#define CS  14
+#define SPI_rate 400000
+#define triggerGPIO 32        
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 
@@ -64,7 +65,7 @@ float gain=0;
 uint16_t gainDAT = 0x1000;
 
 uint64_t freq=2000;
-#define MAXGAIN 0x3000
+#define MAXGAIN 0x1800
 
 
 //-=-=-=-=-=-=-=-=-=-=-=-
@@ -220,6 +221,11 @@ void run(){
   out=readReg(0x1E);
   Serial.print("New run mode:");
   Serial.println(out,BIN);
+   if ((out & 0x3)!=0x03){
+	Serial.print("DAC didn't start correctly!");
+  }else{
+	Serial.print("DAC started correctly!");
+  }
 }
 
 void run2(){

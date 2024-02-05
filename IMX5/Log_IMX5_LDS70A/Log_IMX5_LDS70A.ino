@@ -57,9 +57,9 @@ int statLED = 13;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #define SCK 18
 #define MISO 19
-#define MOSI 32
+#define MOSI 23
 #define CS 5
-#define SPI_rate 80000000
+#define SPI_rate 20000000
 #define CD_pin 27  // chip detect pin is shorted to GND if a card is inserted. (Otherwise pulled up by 10kOhm)
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
@@ -113,7 +113,7 @@ int  IMX5_strobe = 4; //  GPIO for STROBE input (first), to  PIN2 on IMX5
 #define IMX5_BufferSize 2048  // Allocate 1024 Bytes of RAM for UART serial storage
 #define IMX5_log_intervall 2000
 #define STROBE_intervall  5000
-char asciiMessage[] = "$ASCB,512,,,100,,,,30000,,30000,,,";  // // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
+char asciiMessage[] = "$ASCB,512,,,6,,,,12,,12,,,";  // // Get PINS1 @ 2Hz on the connected serial port, leave all other broadcasts the same, and save persistent messages.
 
 char asciiMessageformatted[128];
 int IMX5freq=100;
@@ -394,6 +394,7 @@ void removeDir(fs::FS &fs, const char *path) {
     Serial.println("rmdir failed");
   }
 }
+
 
 void readFile(fs::FS &fs, const char *path) {
   Serial.printf("## Reading file: %s\n", path);
@@ -1080,19 +1081,19 @@ void setup() {
 
   // Setup SD connection
   //--------------------
-  Serial.print("CD pin value:");
-  Serial.println(digitalRead(CD_pin));
-  if (!digitalRead(CD_pin)) {
-    Serial.println("No SD card inserted. Waiting for it.");
-    while (1) {
-      LED_blink(200, 3);
-      delay(2000);
-      if (digitalRead(CD_pin)) {
-        Serial.println(F("SD card inset=rted continuing."));
-        break;
-      }
-    }
-  }
+  // Serial.print("CD pin value:");
+  // Serial.println(digitalRead(CD_pin));
+  // if (!digitalRead(CD_pin)) {
+  //   Serial.println("No SD card inserted. Waiting for it.");
+  //   while (1) {
+  //     LED_blink(200, 3);
+  //     delay(2000);
+  //     if (digitalRead(CD_pin)) {
+  //       Serial.println(F("SD card inset=rted continuing."));
+  //       break;
+  //     }
+  //   }
+  // }
 
   spi.begin(SCK, MISO, MOSI, CS);
   if (!SD.begin(CS, spi, SPI_rate)) {
