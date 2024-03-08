@@ -62,16 +62,17 @@ void parse( String rxValue){     //%toCheck
       indexes[i+1] = rxValue.indexOf(":",indexes[i]+1);
       i++;
     }
-    if (i >0 and i <= 16){
+    if (i >0 and i <= 15){
       int _Nmulti =rxValue.substring(indexes[0]+1,indexes[1]).toInt();
+      _Multifreqs[0]=_Nmulti;
       // Serial.println(rxValue.substring(indexes[0]+1,indexes[1]));
       // Serial.println(_Nmulti);
       // Serial.println(i);
       for (int j =1;j<=_Nmulti;j++){      
-        _Multifreqs[j-1]=rxValue.substring(indexes[j]+1,indexes[j+1]).toInt();
+        _Multifreqs[j]=rxValue.substring(indexes[j]+1,indexes[j+1]).toInt();
       }
       // Serial.println(_Multifreqs[_Nmulti-1]);
-      makeLEMNMEAMSG_values("DEF_MFREQ", 9, _Multifreqs, _Nmulti);
+      makeLEMNMEAMSG_values("DEF_MFREQ", 9, _Multifreqs, _Nmulti+1);
     } else{
       validMsg=false;
     }
@@ -125,6 +126,7 @@ void makeLEMNMEAMSG(char *Message, int messageLength) {
   // Serial.println(LEMNMEA);
   Radio.print(LEMNMEA);
   Serial.println("Sent NMEA");
+  Serial.println(LEMNMEA);
 }
 
 // add checksum to asciiMessage
@@ -133,15 +135,26 @@ void makeLEMNMEAMSG_values(char *Message, int messageLength, int *values, int va
   char LEMNMEA[128];
   char valStr[16];
   sprintf(outMessage,"$LEMMS,%s",Message);
-  int out_length=8+messageLength;
+  int out_length=messageLength+8;
+  Serial.print("length");
+  Serial.println(out_length);
   for (int j =0;j<values_number;j++){
     sprintf(valStr,",%d",values[j]);
     strcat(outMessage, valStr);
-    out_length+= sizeof(valStr) / sizeof(valStr[0]);
+    out_length+= strlen (valStr);
+    Serial.print("valStr:");
+    Serial.println(valStr);
+    Serial.print("length");
+    Serial.println(out_length);
   }
   FormatAsciiMessage(outMessage, out_length,LEMNMEA);
-  Serial.println(LEMNMEA);
   Radio.print(LEMNMEA);
+  Serial.print("Sent NMEA:");
+  Serial.println(LEMNMEA);
+  Serial.print("length");
+  Serial.println(out_length);
+  Serial.print("outMessage:");
+  Serial.println(outMessage);
 }
 
 // add checksum to asciiMessage

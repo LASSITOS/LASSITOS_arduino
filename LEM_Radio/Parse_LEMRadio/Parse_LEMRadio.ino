@@ -19,6 +19,11 @@ int IMX5_Tx = 27; // Hardware TX pin,
 
 int Radio_Rx = 16; //  Hardware RX pin,
 int Radio_Tx = 17; // Hardware TX pin,
+int Radio_CTS = 19;
+int Radio_RTS = 23; 
+
+unsigned long  Radio_inbytes=0;
+int  Radio_inbytes_buff=0;
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 int baudrateRadio= 57600 ;
@@ -47,11 +52,17 @@ void LEM_Handler(){
   int arg;
   char valStr[16];
 
-  if (parser.getArg(0,arg0)) Serial.println(arg0);
-  Serial.print(" Message handle: ");
-  Serial.println(arg0);
+  if (parser.getArg(0,arg0)) {
+    Serial.print(" Message handle: ");
+    Serial.println(arg0);
+    strcpy(msgOut,arg0);
+  }
+  else{
+    Serial.print("Coud not get messge handle! ");
+    return;
+  }
+
   
-  strcpy(msgOut,arg0);
   if (parser.argCount()>1){
     strcat(msgOut,":");
     for (int i=1;i<parser.argCount();i++){
@@ -74,8 +85,11 @@ void unknownCommand()
 }
 void errorHandler()
 {
-  Serial.print("*** Error: ");
-  Serial.println(parser.error()); 
+  if (parser.error()>1){
+    Serial.print("*** Error: ");
+    Serial.println(parser.error()); 
+  }
+
 }
 
 void setup() {
@@ -102,7 +116,9 @@ void loop() {
             RxVal=Radio.read();
             IMX5.write(RxVal);  
             parser << RxVal; 
+            Radio_inbytes_buff++;
       }
+
     }
 
   if (Serial.available()) {      // If anything comes in Serial is passed to NMEA parser
@@ -112,6 +128,12 @@ void loop() {
             parser << RxVal; 
       }
     }
-
+  
+  if (Radio_inbytes_buff>1000) {      // If anything comes in Serial is passed to NMEA parser
+      Radio_inbytes+=Radio_inbytes_buff/1000;
+      Radio_inbytes_buff=0;
+      Serial.print("Total kb received:");
+      Serial.println(Radio_inbytes);
+    }
   delay(5);
 }

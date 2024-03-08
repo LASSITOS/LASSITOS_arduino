@@ -16,9 +16,14 @@ HardwareSerial RTCM_in(1);
 
 int RTCM_Rx = 33; //  Hardware RX pin,
 int RTCM_Tx = 27; // Hardware TX pin,
+unsigned long  RTCM_inbits=0;
+int  RTCM_inbits_buff=0;
+
 
 int Radio_Rx = 16; //  Hardware RX pin,
 int Radio_Tx = 17; // Hardware TX pin,
+int Radio_CTS = 19;
+int Radio_RTS = 18; 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 int baudrateRadio= 57600 ;
@@ -142,5 +147,14 @@ void loop() {
     }
   }
 
-  delay(10);
+  if (RTCM_inbits_buff>1000) {      // If anything comes in Serial is passed to NMEA parser
+      RTCM_inbits+=RTCM_inbits_buff/1000;
+      RTCM_inbits_buff=0;
+      Serial.print("Total kBits received:");
+      Serial.println(RTCM_inbits);
+      Serial.print("Total kBits received:");
+      Serial.println(RTCM_inbits);
+    }
+
+  delay(5);
 }
