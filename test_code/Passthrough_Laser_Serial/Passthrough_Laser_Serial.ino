@@ -18,8 +18,8 @@
 HardwareSerial Radio(2);
 HardwareSerial RTCM_in(1);
 
-int PIN_Rx = 16; //  Hardware RX pin,
-int PIN_Tx = 17; // Hardware TX pin,
+int PIN_Rx = 14; //  Hardware RX pin,
+int PIN_Tx = 32; // Hardware TX pin,
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 int baudrateRadio= 230400 ;
@@ -43,6 +43,10 @@ void loop() {
     // Serial.println("Got data from Serial ");
      }
 
+  if (Radio.available()) {      // If anything comes in Serial (USB),
+     Serial.write(Radio.read());   // read it and send it out Serial1 (pins 0 & 1)
+    // Serial.println("Got data from Serial ");
+     }
 
   delay(1);
 }
