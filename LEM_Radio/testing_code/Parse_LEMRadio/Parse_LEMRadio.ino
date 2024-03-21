@@ -107,6 +107,7 @@ void setup() {
   while(Radio.read() >= 0);
   while(Serial.read() >= 0);
   while(IMX5.read() >= 0);
+  Serial.println("Ready ");
 }
 
 void loop() {
@@ -114,10 +115,13 @@ void loop() {
   if (Radio.available()) {      // If anything comes in Radio,
       while(Radio.available())  {   // read it and send it out IMX5 and to NMEA parser.
             RxVal=Radio.read();
-            IMX5.write(RxVal);  
+            IMX5.write(RxVal); 
+            // Serial.write(RxVal); 
             parser << RxVal; 
             Radio_inbytes_buff++;
+              
       }
+      // Serial.print('.');
 
     }
 
