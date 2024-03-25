@@ -2,18 +2,23 @@
 #include <NMEAParser.h>
 #include "Support.h"
 
-HardwareSerial IMX5(1);
+HardwareSerial GPS(1);
 NMEAParser<3> parser;
 
-const unsigned int IMX5_RX = 33; //  Hardware RX pin,
-const unsigned int IMX5_TX = 27; // Hardware TX pin,
+const unsigned int GPS_RX = 33; //  Hardware RX pin,
+const unsigned int GPS_TX = 27; // Hardware TX pin,
 
-const unsigned int BAUDIMX5= 57600 ;
+const unsigned int BAUDGPS= 57600 ;
 
 unsigned long  ESP_inbytes=0;
 int  ESP_inbytes_buff=0;
 
 char RxVal;
+
+
+long lastTime = 0;  //Simple local timer
+long timer = 0;  //Simple local timer
+
 
 void LEM_Handler(){
   Serial.print("Got $LEM message with ");
@@ -81,12 +86,15 @@ void setup() {
   xLemToBaseQueue = xQueueCreate( QUEUE_LENGTH, sizeof(ESP_Msg_t) );   // create a queue of 10 messages
   xTaskCreate(espNOWsendTask, "espNOWsendTask", 1024*6, NULL, 4, NULL);
   //xTaskCreate(serialEventRadioTask, "serialEventRadioTask", 1024*6, NULL, 5, NULL);
-  IMX5.begin(BAUDIMX5,SERIAL_8N1, IMX5_RX, IMX5_TX);  
+  GPS.begin(BAUDGPS,SERIAL_8N1, GPS_RX, GPS_TX);  
 
   // SEtup parser NMEA messages //
   parser.setErrorHandler(errorHandler);
   parser.addHandler("LEMMS", LEM_Handler);
   parser.setDefaultHandler(unknownCommand);
+
+  lastTime=millis(); 
+
 }
 
 void loop() {
@@ -100,11 +108,25 @@ void loop() {
       }
     }
   
+
+  if (GPS.available()) {      // If anything comes in Serial is passed to NMEA parser
+      while(GPS.available())  {   
+            RxVal=GPS.read();
+            Serial.write(RxVal);  
+      }
+    }
+
+
   if (ESP_inbytes_buff>1000) {      // If anything comes in Serial is passed to NMEA parser
       ESP_inbytes+=ESP_inbytes_buff/1000;
       ESP_inbytes_buff=0;
       Serial.print("Total kb received:");
       Serial.println(ESP_inbytes);
+    }
+
+  if (millis()-lastTime >5000) {      // If anything comes in Serial is passed to NMEA parser
+      sendToBase("hey");
+      lastTime=millis();
     }
   delay(5);
 
