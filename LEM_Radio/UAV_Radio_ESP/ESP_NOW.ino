@@ -186,8 +186,8 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {   
   for(int i=0;i<recMsg.length; i++){
     Radio.write(recMsg.msg[i]);
   }
-  
 }
+
 
 void espNowSend(ESP_Msg_t * toLem){
   esp_err_t result = esp_now_send((const uint8_t *)slave.peer_addr,(const uint8_t *) toLem, sizeof(ESP_Msg_t));

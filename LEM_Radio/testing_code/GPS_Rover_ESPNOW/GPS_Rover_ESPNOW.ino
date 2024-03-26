@@ -7,10 +7,6 @@ NMEAParser<3> parser;
 
 
 
-
-
-
-
 // settings ESP now
 //------------------------------------
 unsigned long  ESP_inbytes=0;
