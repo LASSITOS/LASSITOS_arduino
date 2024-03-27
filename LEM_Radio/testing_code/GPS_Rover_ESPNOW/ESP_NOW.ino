@@ -17,6 +17,7 @@ void InitESPNow() {
     ESP.restart();
   }
   esp_now_register_recv_cb(OnDataRecv);
+  esp_now_register_send_cb(OnDataSent);
   delay(100);
 }
 
