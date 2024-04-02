@@ -186,6 +186,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {   
   memcpy(&recMsg, data, sizeof(ESP_Msg_t));
   for(int i=0;i<recMsg.length; i++){
     Radio.write(recMsg.msg[i]);
+    Serial.write(recMsg.msg[i]);
   }
 }
 

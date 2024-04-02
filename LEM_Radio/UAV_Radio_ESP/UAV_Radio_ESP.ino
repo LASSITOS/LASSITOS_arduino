@@ -99,13 +99,6 @@ void loop() {
 
   }
 
-  // if(millis()>time_lipo2+5000){
-  //   time_lipo2=millis();
-  //   Serial.print("Voltage: ");
-  //   Serial.print(lipo.getVoltage());  // Print the battery voltage
-  //   Serial.print("V");
-  // }
-
 
   if (Serial.available()) {  // Check Serial inputs
     String rxValue = Serial.readString();
@@ -160,6 +153,7 @@ void sendToLEM(char * msg){
 
 
 void Send_tx_String(char * msg){
-  sendToLEM(msg);
+  // sendToLEM(msg);
+  Serial.print(msg);
 }
 

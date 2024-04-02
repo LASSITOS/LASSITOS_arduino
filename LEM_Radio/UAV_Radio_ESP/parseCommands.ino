@@ -124,7 +124,8 @@ void makeLEMNMEAMSG(char *Message, int messageLength) {
   // Serial.println(outMessage);
   FormatAsciiMessage(outMessage,  messageLength+8,  LEMNMEA);
   // Serial.println(LEMNMEA);
-  Radio.print(LEMNMEA);
+  // Radio.print(LEMNMEA);
+  sendToLEM(LEMNMEA);
   Serial.println("Sent NMEA");
   Serial.println(LEMNMEA);
 }
@@ -148,7 +149,8 @@ void makeLEMNMEAMSG_values(char *Message, int messageLength, int *values, int va
     Serial.println(out_length);
   }
   FormatAsciiMessage(outMessage, out_length,LEMNMEA);
-  Radio.print(LEMNMEA);
+  // Radio.print(LEMNMEA);
+  sendToLEM(LEMNMEA);
   Serial.print("Sent NMEA:");
   Serial.println(LEMNMEA);
   Serial.print("length");
