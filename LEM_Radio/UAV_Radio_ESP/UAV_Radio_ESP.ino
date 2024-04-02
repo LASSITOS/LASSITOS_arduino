@@ -22,7 +22,7 @@ SFE_MAX1704X lipo(MAX1704X_MAX17048); // Create a MAX17048
 
 uint time_lipo=0;
 uint time_lipo2=0;
-uint intervall_lipo=30000;  //Intervall between cheking lipo status in ms.
+uint intervall_lipo=60000;  //Intervall between cheking lipo status in ms.
 char lipoString[64];
 float BatV=0;
 float BatPer=0;
@@ -72,7 +72,7 @@ void loop() {
     BatV=lipo.getVoltage();
     BatPer=lipo.getSOC();
     BatRate=lipo.getChangeRate();
-    strcpy(lipoString,"Battery: ");
+    strcpy(lipoString,"Battery UAV repeater: ");
     Serial.print(lipoString);  // Print the battery voltage
     Radio.print(lipoString);
     sprintf(lipoString," %.2f V,",BatV);
@@ -101,6 +101,19 @@ void loop() {
   //   Serial.print(lipo.getVoltage());  // Print the battery voltage
   //   Serial.print("V");
   // }
+
+
+  if (Serial.available()) {  // Check Serial inputs
+    String rxValue = Serial.readString();
+    if (rxValue.length() > 0) {
+      Serial.println("*********");
+      Serial.print("Received Value: ");
+      for (int i = 0; i < rxValue.length(); i++)
+        Serial.print(rxValue[i]);
+      Serial.println("*********");
+      // parse(rxValue); 
+    }
+  }
 }
 
 
