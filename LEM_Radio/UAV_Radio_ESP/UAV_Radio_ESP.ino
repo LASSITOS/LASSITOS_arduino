@@ -8,10 +8,9 @@ const int RADIO_RX = 16;
 const int RADIO_TX = 17;
 const int BAUD_RADIO = 57600;
 
-// HardwareSerial IMX5(1);
-// const unsigned int IMX5_RX = 33; //  Hardware RX pin,
-// const unsigned int IMX5_TX = 27; // Hardware TX pin,
-// const unsigned int BAUDIMX5= 57600 ;
+char txString[500];  // String containing messages to be send to BLE terminal
+char txString2[50];
+char subString[64];
 
 
 // Battery regulator MAX17048
@@ -27,6 +26,11 @@ char lipoString[64];
 float BatV=0;
 float BatPer=0;
 float BatRate=0;
+
+
+
+
+
 
 
 void setup() {
@@ -111,7 +115,7 @@ void loop() {
       for (int i = 0; i < rxValue.length(); i++)
         Serial.print(rxValue[i]);
       Serial.println("*********");
-      // parse(rxValue); 
+      parse(rxValue); 
     }
   }
 }
@@ -146,4 +150,16 @@ void serialEventRadioTask(void * params){
 }
 
 
+void sendToLEM(char * msg){
+  ESP_Msg_t espMsg = {0};
+  memcpy(&espMsg.msg, msg, strlen(msg));
+  espMsg.length = strlen(msg);
+  xQueueSend( xBaseToLemQueue, ( void * ) &espMsg, ( TickType_t ) 0 );
+  Serial.print(msg);
+}
+
+
+void Send_tx_String(char * msg){
+  sendToLEM(msg);
+}
 
